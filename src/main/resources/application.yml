@@ -1,6 +1,13 @@
 spring:
   application:
     name: xiaolu_ai-code-backend
+  # mysql
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/xiaolu_ai_code
+    username: root
+    password: 1212w1212
+
 server:
   port: 8123
   servlet:
