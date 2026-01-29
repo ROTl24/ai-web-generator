@@ -4,7 +4,9 @@ import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.core.service.IService;
 import com.uloaix.xiaolu_aicode.model.dto.app.AppQueryRequest;
 import com.uloaix.xiaolu_aicode.model.entity.App;
+import com.uloaix.xiaolu_aicode.model.entity.User;
 import com.uloaix.xiaolu_aicode.model.vo.AppVO;
+import reactor.core.publisher.Flux;
 
 import java.util.List;
 
@@ -46,4 +48,13 @@ public interface AppService extends IService<App> {
      * @return 脱敏后的应用信息列表
      */
     List<AppVO> getAppVOList(List<App> appList);
+
+    /**
+     * 通过聊天生成应用代码
+     * @param appId 应用id
+     * @param message 消息
+     * @param loginUser 登录用户
+     * @return
+     */
+    Flux<String> chatToGenCode(Long appId, String message, User loginUser);
 }
