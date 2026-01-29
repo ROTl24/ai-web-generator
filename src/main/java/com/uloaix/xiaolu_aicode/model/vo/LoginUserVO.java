@@ -1,28 +1,26 @@
-package com.uloaix.xiaolu_aicode.model.entity.vo;
+package com.uloaix.xiaolu_aicode.model.vo;
 
 import lombok.Data;
 
 import java.io.Serializable;
+import java.time.LocalDateTime;
 
-/**
- * 脱敏后的用户数据
- */
 @Data
-public class UserVO implements Serializable {
+public class LoginUserVO implements Serializable {
+
     /**
-     * id
+     * 用户 id
      */
     private Long id;
 
     /**
-     * 账号拍
+     * 账号
      */
     private String userAccount;
 
     /**
      * 用户昵称
      */
-
     private String userName;
 
     /**
@@ -36,14 +34,19 @@ public class UserVO implements Serializable {
     private String userProfile;
 
     /**
-     * 权限
+     * 用户角色：user/admin
      */
     private String userRole;
 
     /**
      * 创建时间
      */
-    private Long createTime;
+    private LocalDateTime createTime;
+
+    /**
+     * 更新时间
+     */
+    private LocalDateTime updateTime;
 
     private static final long serialVersionUID = 1L;
 }

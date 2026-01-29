@@ -4,7 +4,7 @@ import com.uloaix.xiaolu_aicode.annotation.AuthCheck;
 import com.uloaix.xiaolu_aicode.exception.BusinessException;
 import com.uloaix.xiaolu_aicode.exception.ErrorCode;
 import com.uloaix.xiaolu_aicode.model.entity.User;
-import com.uloaix.xiaolu_aicode.model.entity.enums.UserRoleEnum;
+import com.uloaix.xiaolu_aicode.model.enums.UserRoleEnum;
 import com.uloaix.xiaolu_aicode.service.UserService;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;

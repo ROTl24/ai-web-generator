@@ -8,10 +8,13 @@ import com.zaxxer.hikari.HikariDataSource;
 
 import java.util.Map;
 
+/**
+ * MyBatis 代码生成器
+ */
 public class MyBatisCodeGenerator {
 
     // 需要生成的表名
-    private static final String[] TABLE_NAMES = {"user"};
+    private static final String[] TABLE_NAMES = {"app"};
 
     public static void main(String[] args) {
         // 获取数据源信息
@@ -43,7 +46,7 @@ public class MyBatisCodeGenerator {
 
         // 设置根包，建议先生成到一个临时目录下，生成代码后，再移动到项目目录下
         globalConfig.getPackageConfig()
-                .setBasePackage("com.yupi.yuaicodemother.genresult");
+                .setBasePackage("com.uloaix.xiaolu_aicode.genresult");
 
         // 设置表前缀和只生成哪些表，setGenerateTable 未配置时，生成所有表
         globalConfig.getStrategyConfig()
@@ -69,7 +72,7 @@ public class MyBatisCodeGenerator {
 
         // 设置生成时间和字符串为空，避免多余的代码改动
         globalConfig.getJavadocConfig()
-                .setAuthor("<a href=\"https://github.com/liyupi\">程序员鱼皮</a>")
+                .setAuthor("<a href=\"https://github.com/ROTl24\">程序员小陆</a>")
                 .setSince("");
         return globalConfig;
     }

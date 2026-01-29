@@ -1,20 +1,20 @@
-package com.uloaix.xiaolu_aicode.model.entity.dto;
+package com.uloaix.xiaolu_aicode.model.dto;
 
 import lombok.Data;
 
 import java.io.Serializable;
 
 @Data
-public class UserUpdateRequest implements Serializable {
-    /**
-     * 用户id
-     */
-    private Long id;
-
+public class UserAddRequest implements Serializable {
     /**
      * 用户昵称
      */
     private String userName;
+
+    /**
+     * 用户账号
+     */
+    private String userAccount;
 
     /**
      * 用户头像
@@ -27,7 +27,7 @@ public class UserUpdateRequest implements Serializable {
     private String userProfile;
 
     /**
-     * 用户角色：user/admin
+     * 用户角色:user,admin
      */
     private String userRole;
 

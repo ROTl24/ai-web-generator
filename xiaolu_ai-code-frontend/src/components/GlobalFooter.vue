@@ -1,4 +1,4 @@
-<template>
+  <template>
   <a-layout-footer class="footer">
     <div class="footer-content">
       <p class="copyright">
