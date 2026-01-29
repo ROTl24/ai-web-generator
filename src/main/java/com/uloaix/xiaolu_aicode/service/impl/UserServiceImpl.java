@@ -9,7 +9,7 @@ import com.uloaix.xiaolu_aicode.exception.BusinessException;
 import com.uloaix.xiaolu_aicode.exception.ErrorCode;
 import com.uloaix.xiaolu_aicode.mapper.UserMapper;
 import com.uloaix.xiaolu_aicode.model.entity.User;
-import com.uloaix.xiaolu_aicode.model.dto.UserQueryRequest;
+import com.uloaix.xiaolu_aicode.model.dto.user.UserQueryRequest;
 import com.uloaix.xiaolu_aicode.model.enums.UserRoleEnum;
 import com.uloaix.xiaolu_aicode.model.vo.LoginUserVO;
 import com.uloaix.xiaolu_aicode.model.vo.UserVO;

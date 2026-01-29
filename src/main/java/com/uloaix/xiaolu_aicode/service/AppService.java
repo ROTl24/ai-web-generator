@@ -2,7 +2,7 @@ package com.uloaix.xiaolu_aicode.service;
 
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.core.service.IService;
-import com.uloaix.xiaolu_aicode.model.dto.AppQueryRequest;
+import com.uloaix.xiaolu_aicode.model.dto.app.AppQueryRequest;
 import com.uloaix.xiaolu_aicode.model.entity.App;
 import com.uloaix.xiaolu_aicode.model.vo.AppVO;
 

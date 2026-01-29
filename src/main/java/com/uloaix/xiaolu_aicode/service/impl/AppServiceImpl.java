@@ -8,7 +8,7 @@ import com.mybatisflex.spring.service.impl.ServiceImpl;
 import com.uloaix.xiaolu_aicode.exception.BusinessException;
 import com.uloaix.xiaolu_aicode.exception.ErrorCode;
 import com.uloaix.xiaolu_aicode.mapper.AppMapper;
-import com.uloaix.xiaolu_aicode.model.dto.AppQueryRequest;
+import com.uloaix.xiaolu_aicode.model.dto.app.AppQueryRequest;
 import com.uloaix.xiaolu_aicode.model.entity.App;
 import com.uloaix.xiaolu_aicode.model.entity.User;
 import com.uloaix.xiaolu_aicode.model.vo.AppVO;

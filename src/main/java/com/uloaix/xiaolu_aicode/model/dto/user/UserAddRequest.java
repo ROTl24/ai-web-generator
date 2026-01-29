@@ -1,4 +1,4 @@
-package com.uloaix.xiaolu_aicode.model.dto;
+package com.uloaix.xiaolu_aicode.model.dto.user;
 
 import lombok.Data;
 

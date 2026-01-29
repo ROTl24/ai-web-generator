@@ -3,7 +3,7 @@ package com.uloaix.xiaolu_aicode.service;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.core.service.IService;
 import com.uloaix.xiaolu_aicode.model.entity.User;
-import com.uloaix.xiaolu_aicode.model.dto.UserQueryRequest;
+import com.uloaix.xiaolu_aicode.model.dto.user.UserQueryRequest;
 import com.uloaix.xiaolu_aicode.model.vo.LoginUserVO;
 import com.uloaix.xiaolu_aicode.model.vo.UserVO;
 import jakarta.servlet.http.HttpServletRequest;

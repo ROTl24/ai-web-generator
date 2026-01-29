@@ -1,4 +1,4 @@
-package com.uloaix.xiaolu_aicode.model.dto;
+package com.uloaix.xiaolu_aicode.model.dto.app;
 
 import java.io.Serializable;
 
