@@ -6,7 +6,7 @@
         <RouterLink to="/">
           <div class="header-left">
             <img class="logo" src="@/assets/logo.png" alt="Logo" />
-            <h1 class="site-title">应用生成</h1>
+            <h1 class="site-title">小陆应用生成</h1>
           </div>
         </RouterLink>
       </a-col>
@@ -25,17 +25,12 @@
           <div v-if="loginUserStore.loginUser.id">
             <a-dropdown>
               <a-space>
-               <a-avatar :src="loginUserStore.loginUser.userAvatar" />
-               {{ loginUserStore.loginUser.userName ?? '未命名' }}
+                <a-avatar :src="loginUserStore.loginUser.userAvatar" />
+                {{ loginUserStore.loginUser.userName ?? '无名' }}
               </a-space>
               <template #overlay>
                 <a-menu>
-                  <a-menu-item key="userCenter" @click="goToUserCenter">
-                    <UserOutlined />
-                    个人中心
-                  </a-menu-item>
-                  <a-menu-divider />
-                  <a-menu-item key="logout" @click="doLogout">
+                  <a-menu-item @click="doLogout">
                     <LogoutOutlined />
                     退出登录
                   </a-menu-item>
@@ -44,7 +39,7 @@
             </a-dropdown>
           </div>
           <div v-else>
-            <a-button type="primary" href="/user/login">登录</a-button>  
+            <a-button type="primary" href="/user/login">登录</a-button>
           </div>
         </div>
       </a-col>
@@ -53,22 +48,19 @@
 </template>
 
 <script setup lang="ts">
-import { h, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { message, type MenuProps } from 'ant-design-vue'
-import { LogoutOutlined, UserOutlined, HomeOutlined } from '@ant-design/icons-vue'
-import { userLogout } from '@/api/userController'
-// JS 中引入 Store
+import { userLogout } from '@/api/userController.ts'
 import { useLoginUserStore } from '@/stores/loginUser.ts'
-import { computed } from 'vue'
+import { HomeOutlined, LogoutOutlined } from '@ant-design/icons-vue'
+import { type MenuProps, message } from 'ant-design-vue'
+import { computed, h, ref } from 'vue'
+import { useRouter } from 'vue-router'
 
 const loginUserStore = useLoginUserStore()
-
 const router = useRouter()
 // 当前选中菜单
 const selectedKeys = ref<string[]>(['/'])
 // 监听路由变化，更新当前选中菜单
-router.afterEach((to) => {
+router.afterEach((to, from, next) => {
   selectedKeys.value = [to.path]
 })
 
@@ -86,9 +78,9 @@ const originItems = [
     title: '用户管理',
   },
   {
-    key: 'others',
-    label: h('a', { href: 'https://www.codefather.cn', target: '_blank' }, '编程导航'),
-    title: '编程导航',
+    key: '/admin/appManage',
+    label: '应用管理',
+    title: '应用管理',
   },
 ]
 
@@ -109,7 +101,6 @@ const filterMenus = (menus = [] as MenuProps['items']) => {
 // 展示在菜单的路由数组
 const menuItems = computed<MenuProps['items']>(() => filterMenus(originItems))
 
-
 // 处理菜单点击
 const handleMenuClick: MenuProps['onClick'] = (e) => {
   const key = e.key as string
@@ -120,22 +111,17 @@ const handleMenuClick: MenuProps['onClick'] = (e) => {
   }
 }
 
-// 跳转到个人中心
-const goToUserCenter = () => {
-  router.push('/user/center')
-}
-
+// 退出登录
 const doLogout = async () => {
   const res = await userLogout()
   if (res.data.code === 0) {
-    // 清除登录用户信息
     loginUserStore.setLoginUser({
       userName: '未登录',
     })
     message.success('退出登录成功')
     await router.push('/user/login')
   } else {
-    message.error('退出登录失败' + res.data.message)
+    message.error('退出登录失败，' + res.data.message)
   }
 }
 </script>
