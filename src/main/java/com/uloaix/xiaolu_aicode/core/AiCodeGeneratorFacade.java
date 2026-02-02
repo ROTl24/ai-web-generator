@@ -1,10 +1,7 @@
 package com.uloaix.xiaolu_aicode.core;
 
-import java.io.File;
-
-import org.springframework.stereotype.Service;
-
 import com.uloaix.xiaolu_aicode.ai.AiCodeGeneratorService;
+import com.uloaix.xiaolu_aicode.ai.AiCodeGeneratorServiceFactory;
 import com.uloaix.xiaolu_aicode.ai.model.HtmlCodeResult;
 import com.uloaix.xiaolu_aicode.ai.model.MultiFileCodeResult;
 import com.uloaix.xiaolu_aicode.core.parser.CodeParserExecutor;
@@ -12,10 +9,12 @@ import com.uloaix.xiaolu_aicode.core.saver.CodeFileSaverExecutor;
 import com.uloaix.xiaolu_aicode.exception.BusinessException;
 import com.uloaix.xiaolu_aicode.exception.ErrorCode;
 import com.uloaix.xiaolu_aicode.model.enums.CodeGenTypeEnum;
-
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
+
+import java.io.File;
 
 /**
  * AI 代码生成外观类，组合生成和保存功能，用于统一入口
@@ -24,7 +23,7 @@ import reactor.core.publisher.Flux;
 @Slf4j
 public class AiCodeGeneratorFacade {
   @Resource
-  private AiCodeGeneratorService aiCodeGeneratorService;
+  private AiCodeGeneratorServiceFactory aiCodeGeneratorServiceFactory;
 
  /**
  * 统一入口：根据类型生成并保存代码
@@ -37,7 +36,9 @@ public File generateAndSaveCode(String userMessage, CodeGenTypeEnum codeGenTypeE
   if (codeGenTypeEnum == null) {
       throw new BusinessException(ErrorCode.SYSTEM_ERROR, "生成类型为空");
   }
-  return switch (codeGenTypeEnum) {
+  //根据 AppId 获取相应的 AiService 实例
+    AiCodeGeneratorService aiCodeGeneratorService = aiCodeGeneratorServiceFactory.getAiCodeGeneratorService(appId);
+    return switch (codeGenTypeEnum) {
       case HTML -> {
           HtmlCodeResult result = aiCodeGeneratorService.generateHtmlCode(userMessage);
           yield CodeFileSaverExecutor.executeSaver(result, CodeGenTypeEnum.HTML, appId);
@@ -64,6 +65,8 @@ public Flux<String> generateAndSaveCodeStream(String userMessage, CodeGenTypeEnu
   if (codeGenTypeEnum == null) {
       throw new BusinessException(ErrorCode.SYSTEM_ERROR, "生成类型为空");
   }
+    //根据 AppId 获取相应的 AiService 实例
+    AiCodeGeneratorService aiCodeGeneratorService = aiCodeGeneratorServiceFactory.getAiCodeGeneratorService(appId);
   return switch (codeGenTypeEnum) {
       case HTML -> {
           Flux<String> codeStream = aiCodeGeneratorService.generateHtmlCodeStream(userMessage);

@@ -9,7 +9,7 @@ import com.uloaix.xiaolu_aicode.model.enums.CodeGenTypeEnum;
 /**
  * 多文件代码保存器
  *
- * @author yupi
+ * @author xiaolu
  */
 public class MultiFileCodeFileSaverTemplate extends CodeFileSaverTemplate<MultiFileCodeResult> {
 
