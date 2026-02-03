@@ -9,6 +9,7 @@ import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.spring.service.impl.ServiceImpl;
 import com.uloaix.xiaolu_aicode.constant.AppConstant;
 import com.uloaix.xiaolu_aicode.core.AiCodeGeneratorFacade;
+import com.uloaix.xiaolu_aicode.core.builder.VueProjectBuilder;
 import com.uloaix.xiaolu_aicode.core.handler.StreamHandlerExecutor;
 import com.uloaix.xiaolu_aicode.exception.BusinessException;
 import com.uloaix.xiaolu_aicode.exception.ErrorCode;
@@ -58,6 +59,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
     @Resource
     private StreamHandlerExecutor streamHandlerExecutor;
+
+    @Resource
+    private VueProjectBuilder vueProjectBuilder;
 
 
     @Override
@@ -203,6 +207,18 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         File sourceDir = new File(sourceDirPath);
         if (!sourceDir.exists() || !sourceDir.isDirectory()) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "应用代码不存在，请先生成代码");
+        }
+        // Vue项目特殊处理
+        CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(codeGenType);
+        if(codeGenTypeEnum == CodeGenTypeEnum.VUE_PROJECT){
+            // Vue 项目需要构建
+            boolean buildSuccesss = vueProjectBuilder.buildProject(sourceDirPath);
+            ThrowUtils.throwIf(!buildSuccesss, ErrorCode.SYSTEM_ERROR, "Vue 项目构建失败，请重试");
+            // 检查 dist 目录是否存在
+            File distDir = new File(sourceDirPath,"dist");
+            ThrowUtils.throwIf(!distDir.exists() || !distDir.isDirectory(), ErrorCode.SYSTEM_ERROR, "Vue 项目构建成功但是未生成dist目录，请重试");
+            // 构建完成后，将构建完成的文件复制到部署目录
+            sourceDir = distDir;
         }
         // 7. 复制文件到部署目录
         String deployDirPath = AppConstant.CODE_DEPLOY_ROOT_DIR + File.separator + deployKey;
