@@ -169,5 +169,13 @@ public class WebScreenshotUtils {
         }
     }
 
+    /**
+     * 清理临时截图文件完成,文件放在tmp/screenshots目录下
+     */
+    public static void cleanupTempFiles() {
+        String tempDir = System.getProperty("user.dir") + File.separator + "tmp" + File.separator + "screenshots";
+        FileUtil.del(tempDir);
+    }
+
 
 }
