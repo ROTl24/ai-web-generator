@@ -49,12 +49,34 @@ public class CosManager {
         PutObjectResult result = putObject(key, file);
         if (result != null) {
             // 构建访问URL
-            String url = String.format("%s%s", cosClientConfig.getHost(), key);
+            String host = normalizeHost(cosClientConfig.getHost());
+            String path = key.startsWith("/") ? key : "/" + key;
+            String url = String.format("%s%s", host, path);
             log.info("文件上传COS成功: {} -> {}", file.getName(), url);
             return url;
         } else {
             log.error("文件上传COS失败，返回结果为空");
             return null;
         }
+    }
+
+    /**
+     * 规范化 COS 域名，确保包含协议且不以 / 结尾
+     */
+    private String normalizeHost(String host) {
+        if (host == null) {
+            return "";
+        }
+        String normalized = host.trim();
+        if (normalized.isEmpty()) {
+            return normalized;
+        }
+        if (!normalized.startsWith("http://") && !normalized.startsWith("https://")) {
+            normalized = "https://" + normalized;
+        }
+        if (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
     }
 }

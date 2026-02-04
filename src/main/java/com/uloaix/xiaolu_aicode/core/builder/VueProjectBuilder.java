@@ -69,8 +69,8 @@ public class VueProjectBuilder {
      */
     private boolean executeNpmInstall(File projectDir) {
         log.info("执行 npm install...");
-        String command = String.format("%s install",buildCommand("npm"));
-        return executeCommand(projectDir, "npm install", 300); // 5分钟超时
+        String command = String.format("%s install", buildCommand("npm"));
+        return executeCommand(projectDir, command, 300); // 5分钟超时
     }
 
     /**
@@ -78,8 +78,8 @@ public class VueProjectBuilder {
      */
     private boolean executeNpmBuild(File projectDir) {
         log.info("执行 npm run build...");
-        String command = String.format("%s run build",buildCommand("npm"));
-        return executeCommand(projectDir, "npm run build", 180); // 3分钟超时
+        String command = String.format("%s run build", buildCommand("npm"));
+        return executeCommand(projectDir, command, 180); // 3分钟超时
     }
 
     /**

@@ -40,7 +40,12 @@
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.dataIndex === 'cover'">
-          <a-image v-if="record.cover" :src="record.cover" :width="80" :height="60" />
+          <a-image
+            v-if="record.cover"
+            :src="normalizeAssetUrl(record.cover)"
+            :width="80"
+            :height="60"
+          />
           <div v-else class="no-cover">无封面</div>
         </template>
         <template v-else-if="column.dataIndex === 'initPrompt'">
@@ -95,6 +100,7 @@ import { message } from 'ant-design-vue'
 import { listAppVoByPageByAdmin, deleteAppByAdmin, updateAppByAdmin } from '@/api/appController'
 import { CODE_GEN_TYPE_OPTIONS, formatCodeGenType } from '@/utils/codeGenTypes'
 import { formatTime } from '@/utils/time'
+import { normalizeAssetUrl } from '@/utils/url'
 import UserInfo from '@/components/UserInfo.vue'
 
 const router = useRouter()

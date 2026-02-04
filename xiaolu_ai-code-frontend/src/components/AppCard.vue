@@ -1,7 +1,7 @@
 <template>
   <div class="app-card" :class="{ 'app-card--featured': featured }">
     <div class="app-preview">
-      <img v-if="app.cover" :src="app.cover" :alt="app.appName" />
+      <img v-if="app.cover" :src="normalizeAssetUrl(app.cover)" :alt="app.appName" />
       <div v-else class="app-placeholder">
         <span>🤖</span>
       </div>
@@ -29,6 +29,8 @@
 </template>
 
 <script setup lang="ts">
+import { normalizeAssetUrl } from '@/utils/url'
+
 interface Props {
   app: API.AppVO
   featured?: boolean

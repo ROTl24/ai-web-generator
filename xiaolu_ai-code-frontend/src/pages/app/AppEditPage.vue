@@ -31,7 +31,7 @@
             <a-input v-model:value="formData.cover" placeholder="请输入封面图片链接" />
             <div v-if="formData.cover" class="cover-preview">
               <a-image
-                :src="formData.cover"
+                :src="normalizeAssetUrl(formData.cover)"
                 :width="200"
                 :height="150"
                 fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
@@ -124,6 +124,7 @@ import { useLoginUserStore } from '@/stores/loginUser'
 import { getAppVoById, updateApp, updateAppByAdmin } from '@/api/appController'
 import { formatCodeGenType } from '@/utils/codeGenTypes'
 import { formatTime } from '@/utils/time'
+import { normalizeAssetUrl } from '@/utils/url'
 import UserInfo from '@/components/UserInfo.vue'
 import { getStaticPreviewUrl } from '@/config/env'
 import type { FormInstance } from 'ant-design-vue'
@@ -187,7 +188,7 @@ const fetchAppInfo = async () => {
 
       // 填充表单数据
       formData.appName = appInfo.value.appName || ''
-      formData.cover = appInfo.value.cover || ''
+      formData.cover = normalizeAssetUrl(appInfo.value.cover) || ''
       formData.priority = appInfo.value.priority || 0
       formData.initPrompt = appInfo.value.initPrompt || ''
       formData.codeGenType = appInfo.value.codeGenType || ''
@@ -247,7 +248,7 @@ const handleSubmit = async () => {
 const resetForm = () => {
   if (appInfo.value) {
     formData.appName = appInfo.value.appName || ''
-    formData.cover = appInfo.value.cover || ''
+    formData.cover = normalizeAssetUrl(appInfo.value.cover) || ''
     formData.priority = appInfo.value.priority || 0
   }
   formRef.value?.clearValidate()

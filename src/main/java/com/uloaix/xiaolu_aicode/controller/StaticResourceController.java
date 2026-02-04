@@ -1,6 +1,7 @@
 package com.uloaix.xiaolu_aicode.controller;
 
 import com.uloaix.xiaolu_aicode.constant.AppConstant;
+import com.uloaix.xiaolu_aicode.model.enums.CodeGenTypeEnum;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -31,9 +32,25 @@ public class StaticResourceController {
             @PathVariable String deployKey,
             HttpServletRequest request) {
         try {
+            boolean isPreviewKey = false;
+            for (CodeGenTypeEnum typeEnum : CodeGenTypeEnum.values()) {
+                if (deployKey.startsWith(typeEnum.getValue() + "_")) {
+                    isPreviewKey = true;
+                    break;
+                }
+            }
+            boolean isVuePreview = isPreviewKey && deployKey.startsWith(CodeGenTypeEnum.VUE_PROJECT.getValue() + "_");
             // 获取资源路径
             String resourcePath = (String) request.getAttribute(HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE);
             resourcePath = resourcePath.substring(("/static/" + deployKey).length());
+            // 兼容已携带 /dist 的访问路径（避免重复拼接）
+            if (isVuePreview) {
+                if ("/dist".equals(resourcePath) || "/dist/".equals(resourcePath)) {
+                    resourcePath = "/";
+                } else if (resourcePath.startsWith("/dist/")) {
+                    resourcePath = resourcePath.substring("/dist".length());
+                }
+            }
             // 如果是目录访问（不带斜杠），重定向到带斜杠的URL
             if (resourcePath.isEmpty()) {
                 HttpHeaders headers = new HttpHeaders();
@@ -44,8 +61,18 @@ public class StaticResourceController {
             if (resourcePath.equals("/")) {
                 resourcePath = "/index.html";
             }
+            // 构建基础目录，Vue 项目预览需要使用 dist 目录
+            String baseDirPath;
+            if (isPreviewKey) {
+                baseDirPath = PREVIEW_ROOT_DIR + "/" + deployKey;
+                if (isVuePreview) {
+                    baseDirPath = baseDirPath + "/dist";
+                }
+            } else {
+                baseDirPath = AppConstant.CODE_DEPLOY_ROOT_DIR + "/" + deployKey;
+            }
             // 构建文件路径
-            String filePath = PREVIEW_ROOT_DIR + "/" + deployKey + resourcePath;
+            String filePath = baseDirPath + resourcePath;
             File file = new File(filePath);
             // 检查文件是否存在
             if (!file.exists()) {
