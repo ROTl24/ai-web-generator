@@ -5,8 +5,8 @@ import cn.hutool.core.util.StrUtil;
 import com.uloaix.xiaolu_aicode.exception.ErrorCode;
 import com.uloaix.xiaolu_aicode.exception.ThrowUtils;
 import com.uloaix.xiaolu_aicode.manager.CosManager;
+import com.uloaix.xiaolu_aicode.manager.ScreenshotManager;
 import com.uloaix.xiaolu_aicode.service.ScreenshotService;
-import com.uloaix.xiaolu_aicode.utils.WebScreenshotUtils;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -23,12 +23,15 @@ public class ScreenshotServiceImpl implements ScreenshotService {
     @Resource
     private CosManager cosManager;
 
+    @Resource
+    private ScreenshotManager screenshotManager;
+
     @Override
     public String generateAndUploadScreenshot(String webUrl) {
         ThrowUtils.throwIf(StrUtil.isBlank(webUrl), ErrorCode.PARAMS_ERROR, "网页URL不能为空");
         log.info("开始生成网页截图，URL: {}", webUrl);
-        // 1. 生成本地截图
-        String localScreenshotPath = WebScreenshotUtils.saveWebPageScreenshot(webUrl);
+        // 1. 生成本地截图（单线程队列串行执行）
+        String localScreenshotPath = screenshotManager.takeScreenshot(webUrl).join();
         ThrowUtils.throwIf(StrUtil.isBlank(localScreenshotPath), ErrorCode.OPERATION_ERROR, "本地截图生成失败");
         try {
             // 2. 上传到对象存储

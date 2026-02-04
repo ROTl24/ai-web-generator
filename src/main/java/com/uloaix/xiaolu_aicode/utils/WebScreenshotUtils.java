@@ -7,7 +7,6 @@ import cn.hutool.core.util.StrUtil;
 import com.uloaix.xiaolu_aicode.exception.BusinessException;
 import com.uloaix.xiaolu_aicode.exception.ErrorCode;
 import io.github.bonigarcia.wdm.WebDriverManager;
-import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.OutputType;
@@ -24,33 +23,21 @@ import java.util.UUID;
 @Slf4j
 public class WebScreenshotUtils {
 
-    private static final WebDriver webDriver;
-
-    static {
-        final int DEFAULT_WIDTH = 1600;
-        final int DEFAULT_HEIGHT = 900;
-        webDriver = initChromeDriver(DEFAULT_WIDTH, DEFAULT_HEIGHT);
-    }
-
-    /**
-     * 退出时销毁
-     */
-    @PreDestroy
-    public void destroy() {
-        webDriver.quit();
-    }
-
-
     /**
      * 生成网页截图
      *
+     * @param webDriver 浏览器驱动
      * @param webUrl 网页URL
      * @return 压缩后的截图文件路径，失败返回null
      */
-    public static String saveWebPageScreenshot(String webUrl) {
+    public static String saveWebPageScreenshot(WebDriver webDriver, String webUrl) {
         // 非空校验
         if (StrUtil.isBlank(webUrl)) {
             log.error("网页URL不能为空");
+            return null;
+        }
+        if (webDriver == null) {
+            log.error("WebDriver 不能为空");
             return null;
         }
         try {
@@ -92,7 +79,7 @@ public class WebScreenshotUtils {
      * @param height
      * @return
      */
-    private static WebDriver initChromeDriver(int width, int height) {
+    public static WebDriver initChromeDriver(int width, int height) {
         try {
             // 自动管理 ChromeDriver
             WebDriverManager.chromedriver().setup();
