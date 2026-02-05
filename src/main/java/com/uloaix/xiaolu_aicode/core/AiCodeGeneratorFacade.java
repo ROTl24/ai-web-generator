@@ -3,11 +3,14 @@ package com.uloaix.xiaolu_aicode.core;
 import cn.hutool.json.JSONUtil;
 import com.uloaix.xiaolu_aicode.ai.AiCodeGeneratorService;
 import com.uloaix.xiaolu_aicode.ai.AiCodeGeneratorServiceFactory;
+import com.uloaix.xiaolu_aicode.ai.AiVueProjectCreateService;
+import com.uloaix.xiaolu_aicode.ai.AiVueProjectModifyService;
 import com.uloaix.xiaolu_aicode.ai.model.HtmlCodeResult;
 import com.uloaix.xiaolu_aicode.ai.model.MultiFileCodeResult;
 import com.uloaix.xiaolu_aicode.ai.model.message.AiResponseMessage;
 import com.uloaix.xiaolu_aicode.ai.model.message.ToolExecutedMessage;
 import com.uloaix.xiaolu_aicode.ai.model.message.ToolRequestMessage;
+import com.uloaix.xiaolu_aicode.constant.AppConstant;
 import com.uloaix.xiaolu_aicode.core.parser.CodeParserExecutor;
 import com.uloaix.xiaolu_aicode.core.saver.CodeFileSaverExecutor;
 import com.uloaix.xiaolu_aicode.exception.BusinessException;
@@ -22,6 +25,9 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
 import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 /**
  * AI 代码生成外观类，组合生成和保存功能，用于统一入口
@@ -73,19 +79,28 @@ public class AiCodeGeneratorFacade {
         if (codeGenTypeEnum == null) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "生成类型为空");
         }
-        // 根据 appId 获取对应的 AI 服务实例
-        AiCodeGeneratorService aiCodeGeneratorService = aiCodeGeneratorServiceFactory.getAiCodeGeneratorService(appId, codeGenTypeEnum);
         return switch (codeGenTypeEnum) {
             case HTML -> {
+                // 根据 appId 获取对应的 AI 服务实例
+                AiCodeGeneratorService aiCodeGeneratorService = aiCodeGeneratorServiceFactory.getAiCodeGeneratorService(appId, codeGenTypeEnum);
                 Flux<String> codeStream = aiCodeGeneratorService.generateHtmlCodeStream(userMessage);
                 yield processCodeStream(codeStream, CodeGenTypeEnum.HTML, appId);
             }
             case MULTI_FILE -> {
+                // 根据 appId 获取对应的 AI 服务实例
+                AiCodeGeneratorService aiCodeGeneratorService = aiCodeGeneratorServiceFactory.getAiCodeGeneratorService(appId, codeGenTypeEnum);
                 Flux<String> codeStream = aiCodeGeneratorService.generateMultiFileCodeStream(userMessage);
                 yield processCodeStream(codeStream, CodeGenTypeEnum.MULTI_FILE, appId);
             }
             case VUE_PROJECT -> {
-                TokenStream tokenStream = aiCodeGeneratorService.generateVueProjectCodeStream(appId, userMessage);
+                TokenStream tokenStream;
+                if (isVueProjectInitialized(appId)) {
+                    AiVueProjectModifyService modifyService = aiCodeGeneratorServiceFactory.getAiVueProjectModifyService(appId);
+                    tokenStream = modifyService.modifyVueProjectCodeStream(appId, userMessage);
+                } else {
+                    AiVueProjectCreateService createService = aiCodeGeneratorServiceFactory.getAiVueProjectCreateService(appId);
+                    tokenStream = createService.createVueProjectCodeStream(appId, userMessage);
+                }
                 yield processTokenStream(tokenStream);
             }
             default -> {
@@ -93,6 +108,18 @@ public class AiCodeGeneratorFacade {
                 throw new BusinessException(ErrorCode.SYSTEM_ERROR, errorMessage);
             }
         };
+    }
+
+    /**
+     * 判断 Vue 工程是否已初始化（用于区分“创建”与“修改”提示词和 AI Service）
+     */
+    private boolean isVueProjectInitialized(Long appId) {
+        if (appId == null || appId <= 0) {
+            return false;
+        }
+        Path projectRoot = Paths.get(AppConstant.CODE_OUTPUT_ROOT_DIR, "vue_project_" + appId);
+        Path packageJson = projectRoot.resolve("package.json");
+        return Files.exists(packageJson) && Files.isRegularFile(packageJson);
     }
 
     /**

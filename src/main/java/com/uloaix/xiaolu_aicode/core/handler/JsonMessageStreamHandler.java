@@ -91,6 +91,10 @@ public class JsonMessageStreamHandler {
                     // 第一次调用这个工具，记录 ID 并完整返回工具信息
                     seenToolIds.add(toolId);
                     BaseTool tool = toolManager.getTool(toolRequestMessage.getName());
+                    if (tool == null) {
+                        log.warn("收到未知工具请求: {}", toolRequestMessage.getName());
+                        return String.format("\n\n[选择工具] 未知工具：%s\n\n", toolRequestMessage.getName());
+                    }
                     return tool.generateToolRequestResponse();
                 } else {
                     // 不是第一次调用这个工具，直接返回空
@@ -99,9 +103,22 @@ public class JsonMessageStreamHandler {
             }
             case TOOL_EXECUTED -> {
                 ToolExecutedMessage toolExecutedMessage = JSONUtil.toBean(chunk, ToolExecutedMessage.class);
-                JSONObject jsonObject = JSONUtil.parseObj(toolExecutedMessage.getArguments());
                 BaseTool tool = toolManager.getTool(toolExecutedMessage.getName());
-                String result = tool.generateToolExecutedResult(jsonObject);
+                String result;
+                if (tool == null) {
+                    log.warn("收到未知工具执行结果: {}", toolExecutedMessage.getName());
+                    result = String.format("[⚒️工具调用] 未知工具 %s\n参数：%s",
+                            toolExecutedMessage.getName(), toolExecutedMessage.getArguments());
+                } else {
+                    JSONObject jsonObject;
+                    try {
+                        jsonObject = JSONUtil.parseObj(toolExecutedMessage.getArguments());
+                    } catch (Exception e) {
+                        log.warn("解析工具参数失败，toolName: {}, raw: {}", toolExecutedMessage.getName(), toolExecutedMessage.getArguments());
+                        jsonObject = new JSONObject();
+                    }
+                    result = tool.generateToolExecutedResult(jsonObject);
+                }
                 // 输出前端和要持久化的内容
                 String output = String.format("\n\n%s\n\n", result);
                 chatHistoryStringBuilder.append(output);
