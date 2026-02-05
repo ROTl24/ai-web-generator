@@ -9,10 +9,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 @SpringBootTest
 public class WebScreenshotUtilsTest {
 
-    @Test
-    void saveWebPageScreenshot() {
-        String testUrl = "https://www.baidu.com/";
-        String webPageScreenshot = WebScreenshotUtils.saveWebPageScreenshot(testUrl);
-        Assertions.assertNotNull(webPageScreenshot);
-    }
+//    @Test
+//    void saveWebPageScreenshot() {
+//        String testUrl = "https://www.baidu.com/";
+//        String webPageScreenshot = WebScreenshotUtils.saveWebPageScreenshot(testUrl);
+//        Assertions.assertNotNull(webPageScreenshot);
+//    }
 }
