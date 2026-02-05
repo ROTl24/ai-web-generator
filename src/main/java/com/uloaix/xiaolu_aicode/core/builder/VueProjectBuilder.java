@@ -4,24 +4,31 @@ import cn.hutool.core.util.RuntimeUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import jakarta.annotation.PreDestroy;
 import java.io.File;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Component
 public class VueProjectBuilder {
+    private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+    private final ConcurrentMap<String, CompletableFuture<Boolean>> buildTaskMap = new ConcurrentHashMap<>();
+
     /**
      * 构建异步项目，不阻塞主流程
      * @param projectPath 项目路径
      */
     public void buildProjectAsync(String projectPath) {
-        Thread.ofVirtual().name("Vue-Builder-"+System.currentTimeMillis()).start(()->{
-            try {
-                buildProject(projectPath);
-            } catch (Exception e) {
-                log.error("异步构建Vue项目时发生异常：{}", e.getMessage(),e);
-            }
-        });
+        submitBuildTask(projectPath)
+                .exceptionally(error -> {
+                    log.error("异步构建Vue项目时发生异常：{}", error.getMessage(), error);
+                    return false;
+                });
     }
 
     /**
@@ -31,6 +38,33 @@ public class VueProjectBuilder {
      * @return 是否构建成功
      */
     public boolean buildProject(String projectPath) {
+        try {
+            return submitBuildTask(projectPath).get();
+        } catch (Exception e) {
+            log.error("构建Vue项目失败：{}", e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * 提交构建任务（同一项目路径复用任务）
+     */
+    private CompletableFuture<Boolean> submitBuildTask(String projectPath) {
+        return buildTaskMap.compute(projectPath, (path, existing) -> {
+            if (existing != null && !existing.isDone()) {
+                log.info("检测到项目正在构建，复用任务: {}", path);
+                return existing;
+            }
+            CompletableFuture<Boolean> future = CompletableFuture.supplyAsync(() -> doBuildProject(path), executor);
+            future.whenComplete((result, error) -> buildTaskMap.remove(path, future));
+            return future;
+        });
+    }
+
+    /**
+     * 实际执行构建流程
+     */
+    private boolean doBuildProject(String projectPath) {
         File projectDir = new File(projectPath);
         if (!projectDir.exists() || !projectDir.isDirectory()) {
             log.error("项目目录不存在: {}", projectPath);
@@ -140,6 +174,11 @@ public class VueProjectBuilder {
             log.error("执行命令失败: {}, 错误信息: {}", command, e.getMessage());
             return false;
         }
+    }
+
+    @PreDestroy
+    public void destroy() {
+        executor.shutdown();
     }
 
 }
