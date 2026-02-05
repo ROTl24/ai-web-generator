@@ -59,6 +59,8 @@
                 class="avatar-uploader"
                 :show-upload-list="false"
                 :before-upload="beforeUpload"
+                :custom-request="handleCustomUpload"
+                :disabled="avatarUploading"
                 @change="handleUploadChange"
               >
                 <div class="avatar-wrapper">
@@ -81,7 +83,7 @@
               </a-upload>
               <div class="avatar-tips">
                 <div class="tip-main">点击头像可上传本地图片</div>
-                <div class="tip-detail">支持 JPG、PNG 格式，文件小于 2MB</div>
+                <div class="tip-detail">支持 JPG、PNG 格式，超过 2MB 会自动压缩</div>
               </div>
             </div>
           </a-form-item>
@@ -114,18 +116,33 @@
 </template>
 
 <script lang="ts" setup>
-import { reactive, ref, onMounted } from 'vue'
-import { message } from 'ant-design-vue'
-import { CameraOutlined } from '@ant-design/icons-vue'
+import { updateMyUser, uploadUserAvatar } from '@/api/userController'
 import { useLoginUserStore } from '@/stores/loginUser'
-import { updateUser } from '@/api/userController'
+import { CameraOutlined } from '@ant-design/icons-vue'
 import type { UploadChangeParam } from 'ant-design-vue'
+import { message } from 'ant-design-vue'
 import dayjs from 'dayjs'
+import { onMounted, reactive, ref } from 'vue'
 
 const loginUserStore = useLoginUserStore()
 const loginUser = loginUserStore.loginUser
 
 const loading = ref(false)
+const avatarUploading = ref(false)
+
+const MAX_AVATAR_SIZE = 2 * 1024 * 1024
+const MAX_AVATAR_SIDE = 1024
+const MIN_QUALITY = 0.6
+const QUALITY_STEP = 0.1
+const SCALE_STEP = 0.85
+const MAX_SCALE_TRIES = 3
+
+type UploadRequestOption = {
+  file: File
+  onSuccess?: (response: unknown, file: File) => void
+  onError?: (error: Error) => void
+  onProgress?: (event: { percent: number }) => void
+}
 
 const formState = reactive({
   userName: '',
@@ -146,33 +163,138 @@ const resetForm = () => {
   message.info('已重置为当前信息')
 }
 
-// 上传前校验并处理
+const loadImage = (file: File) =>
+  new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image()
+    const objectUrl = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl)
+      resolve(img)
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      reject(new Error('图片加载失败'))
+    }
+    img.src = objectUrl
+  })
+
+const canvasToBlob = (canvas: HTMLCanvasElement, quality: number) =>
+  new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) {
+          resolve(blob)
+        } else {
+          reject(new Error('图片压缩失败'))
+        }
+      },
+      'image/jpeg',
+      quality,
+    )
+  })
+
+const drawImageToCanvas = (
+  image: HTMLImageElement,
+  width: number,
+  height: number,
+): HTMLCanvasElement => {
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const context = canvas.getContext('2d')
+  if (!context) {
+    throw new Error('图片压缩失败')
+  }
+  // 填充白底，避免 PNG 透明区域变黑
+  context.fillStyle = '#ffffff'
+  context.fillRect(0, 0, width, height)
+  context.drawImage(image, 0, 0, width, height)
+  return canvas
+}
+
+const compressImage = async (file: File) => {
+  const image = await loadImage(file)
+  const maxSide = Math.max(image.width, image.height)
+  const scale =
+    maxSide > MAX_AVATAR_SIDE ? MAX_AVATAR_SIDE / maxSide : 1
+  let targetWidth = Math.max(1, Math.round(image.width * scale))
+  let targetHeight = Math.max(1, Math.round(image.height * scale))
+  let canvas = drawImageToCanvas(image, targetWidth, targetHeight)
+  let quality = 0.92
+  let blob = await canvasToBlob(canvas, quality)
+
+  while (blob.size > MAX_AVATAR_SIZE && quality > MIN_QUALITY) {
+    quality = Math.max(MIN_QUALITY, quality - QUALITY_STEP)
+    blob = await canvasToBlob(canvas, quality)
+  }
+
+  let scaleTries = 0
+  while (blob.size > MAX_AVATAR_SIZE && scaleTries < MAX_SCALE_TRIES) {
+    targetWidth = Math.max(1, Math.round(targetWidth * SCALE_STEP))
+    targetHeight = Math.max(1, Math.round(targetHeight * SCALE_STEP))
+    canvas = drawImageToCanvas(image, targetWidth, targetHeight)
+    quality = 0.92
+    blob = await canvasToBlob(canvas, quality)
+    while (blob.size > MAX_AVATAR_SIZE && quality > MIN_QUALITY) {
+      quality = Math.max(MIN_QUALITY, quality - QUALITY_STEP)
+      blob = await canvasToBlob(canvas, quality)
+    }
+    scaleTries += 1
+  }
+
+  if (blob.size > MAX_AVATAR_SIZE) {
+    throw new Error('图片压缩后仍超过 2MB，请选择更小的图片')
+  }
+
+  const fileName = file.name.replace(/\.\w+$/, '') || 'avatar'
+  return new File([blob], `${fileName}.jpg`, { type: 'image/jpeg' })
+}
+
+// 上传前校验
 const beforeUpload = (file: File) => {
   const isJpgOrPng = file.type === 'image/jpeg' || file.type === 'image/png'
   if (!isJpgOrPng) {
     message.error('只支持上传 JPG/PNG 格式的图片！')
     return false
   }
-  const isLt2M = file.size / 1024 / 1024 < 2
-  if (!isLt2M) {
-    message.error('图片大小不能超过 2MB！')
-    return false
-  }
 
-  // 读取文件并转为 Base64
-  const reader = new FileReader()
-  reader.readAsDataURL(file)
-  reader.onload = () => {
-    formState.userAvatar = reader.result as string
-    message.success('头像已选择，请点击保存修改')
+  return true
+}
+
+// 自定义上传
+const handleCustomUpload = async (options: UploadRequestOption) => {
+  if (avatarUploading.value) {
+    return
   }
-  
-  return false // 阻止自动上传
+  const file = options.file as File
+  avatarUploading.value = true
+  try {
+    let uploadFile = file
+    if (file.size > MAX_AVATAR_SIZE) {
+      message.info('头像超过 2MB，正在压缩...')
+      uploadFile = await compressImage(file)
+    }
+    const res = await uploadUserAvatar(uploadFile)
+    if (res.data.code === 0 && res.data.data) {
+      formState.userAvatar = res.data.data
+      message.success('头像上传成功，请点击保存修改')
+      options.onSuccess?.(res.data, uploadFile)
+    } else {
+      message.error('头像上传失败：' + (res.data.message ?? '请稍后重试'))
+      options.onError?.(new Error(res.data.message ?? '上传失败'))
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '头像上传失败，请稍后重试'
+    message.error(errorMessage)
+    options.onError?.(error as Error)
+  } finally {
+    avatarUploading.value = false
+  }
 }
 
 // 处理图片上传变化
 const handleUploadChange = (info: UploadChangeParam) => {
-  // 这个函数主要用于监听上传状态，实际处理在 beforeUpload 中
+  // 这个函数主要用于监听上传状态，实际处理在自定义上传中
   console.log('Upload change:', info.file.status)
 }
 
@@ -180,8 +302,7 @@ const handleUploadChange = (info: UploadChangeParam) => {
 const handleSubmit = async () => {
   loading.value = true
   try {
-    const res = await updateUser({
-      id: loginUser.id,
+    const res = await updateMyUser({
       userName: formState.userName,
       userAvatar: formState.userAvatar,
       userProfile: formState.userProfile,

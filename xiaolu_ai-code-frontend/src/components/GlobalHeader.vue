@@ -12,12 +12,7 @@
       </a-col>
       <!-- 中间：导航菜单 -->
       <a-col flex="auto">
-        <a-menu
-          v-model:selectedKeys="selectedKeys"
-          mode="horizontal"
-          :items="menuItems"
-          @click="handleMenuClick"
-        />
+        <a-menu v-model:selectedKeys="selectedKeys" mode="horizontal" :items="menuItems" @click="handleMenuClick" />
       </a-col>
       <!-- 右侧：用户操作区域 -->
       <a-col>
@@ -30,6 +25,10 @@
               </a-space>
               <template #overlay>
                 <a-menu>
+                  <a-menu-item @click="goToUserCenter">
+                    <SettingOutlined />
+                    个人中心
+                  </a-menu-item>
                   <a-menu-item @click="doLogout">
                     <LogoutOutlined />
                     退出登录
@@ -50,7 +49,7 @@
 <script setup lang="ts">
 import { userLogout } from '@/api/userController.ts'
 import { useLoginUserStore } from '@/stores/loginUser.ts'
-import { HomeOutlined, LogoutOutlined } from '@ant-design/icons-vue'
+import { HomeOutlined, LogoutOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import { type MenuProps, message } from 'ant-design-vue'
 import { computed, h, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -109,6 +108,11 @@ const handleMenuClick: MenuProps['onClick'] = (e) => {
   if (key.startsWith('/')) {
     router.push(key)
   }
+}
+
+// 进入个人中心
+const goToUserCenter = () => {
+  router.push('/user/center')
 }
 
 // 退出登录

@@ -1,6 +1,8 @@
 package com.uloaix.xiaolu_aicode.controller;
 
 import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.io.FileUtil;
+import cn.hutool.core.util.StrUtil;
 import com.mybatisflex.core.paginate.Page;
 import com.uloaix.xiaolu_aicode.annotation.AuthCheck;
 import com.uloaix.xiaolu_aicode.common.BaseResponse;
@@ -10,6 +12,7 @@ import com.uloaix.xiaolu_aicode.constant.UserConstant;
 import com.uloaix.xiaolu_aicode.exception.BusinessException;
 import com.uloaix.xiaolu_aicode.exception.ErrorCode;
 import com.uloaix.xiaolu_aicode.exception.ThrowUtils;
+import com.uloaix.xiaolu_aicode.manager.CosManager;
 import com.uloaix.xiaolu_aicode.model.dto.user.*;
 import com.uloaix.xiaolu_aicode.model.entity.User;
 import com.uloaix.xiaolu_aicode.model.vo.LoginUserVO;
@@ -18,8 +21,14 @@ import com.uloaix.xiaolu_aicode.service.UserService;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.File;
+import java.io.IOException;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * 用户 控制层。
@@ -33,6 +42,8 @@ public class UserController {
     @Resource
     private UserService userService;
 
+    @Resource
+    private CosManager cosManager;
 
     /**
      * 用户注册
@@ -89,6 +100,44 @@ public class UserController {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
         boolean result = userService.userLogout(request);
         return ResultUtils.success(result);
+    }
+
+    /**
+     * 上传用户头像
+     *
+     * @param file    头像文件
+     * @param request 请求
+     * @return 头像访问 URL
+     */
+    @PostMapping("/avatar/upload")
+    public BaseResponse<String> uploadUserAvatar(@RequestPart("file") MultipartFile file, HttpServletRequest request) {
+        userService.getLoginUser(request);
+        ThrowUtils.throwIf(file == null || file.isEmpty(), ErrorCode.PARAMS_ERROR, "头像文件不能为空");
+        long maxSize = 2 * 1024 * 1024L;
+        ThrowUtils.throwIf(file.getSize() > maxSize, ErrorCode.PARAMS_ERROR, "头像文件不能超过 2MB");
+        String contentType = file.getContentType();
+        boolean isJpg = "image/jpeg".equalsIgnoreCase(contentType) || "image/jpg".equalsIgnoreCase(contentType);
+        boolean isPng = "image/png".equalsIgnoreCase(contentType);
+        ThrowUtils.throwIf(!(isJpg || isPng), ErrorCode.PARAMS_ERROR, "仅支持 JPG/PNG 格式的图片");
+        String suffix = FileUtil.getSuffix(file.getOriginalFilename());
+        if (StrUtil.isBlank(suffix)) {
+            suffix = isPng ? "png" : "jpg";
+        }
+        File tempFile = null;
+        try {
+            tempFile = File.createTempFile("avatar_", "." + suffix);
+            file.transferTo(tempFile);
+            String cosKey = generateAvatarKey(suffix);
+            String avatarUrl = cosManager.uploadFile(cosKey, tempFile);
+            ThrowUtils.throwIf(StrUtil.isBlank(avatarUrl), ErrorCode.OPERATION_ERROR, "头像上传失败");
+            return ResultUtils.success(avatarUrl);
+        } catch (IOException exception) {
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, "头像上传失败");
+        } finally {
+            if (tempFile != null) {
+                FileUtil.del(tempFile);
+            }
+        }
     }
 
     /**
@@ -164,6 +213,26 @@ public class UserController {
     }
 
     /**
+     * 更新当前登录用户（普通用户）
+     */
+    @PostMapping("/update/my")
+    public BaseResponse<Boolean> updateMyUser(@RequestBody UserUpdateMyRequest userUpdateMyRequest,
+                                              HttpServletRequest request) {
+        ThrowUtils.throwIf(userUpdateMyRequest == null, ErrorCode.PARAMS_ERROR);
+        ThrowUtils.throwIf(StrUtil.isBlank(userUpdateMyRequest.getUserName()),
+                ErrorCode.PARAMS_ERROR, "用户名不能为空");
+        User loginUser = userService.getLoginUser(request);
+        User user = new User();
+        user.setId(loginUser.getId());
+        user.setUserName(userUpdateMyRequest.getUserName());
+        user.setUserAvatar(userUpdateMyRequest.getUserAvatar());
+        user.setUserProfile(userUpdateMyRequest.getUserProfile());
+        boolean result = userService.updateById(user);
+        ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
+        return ResultUtils.success(true);
+    }
+
+    /**
      * 分页获取用户封装列表（仅管理员）
      *
      * @param userQueryRequest 查询请求参数
@@ -181,6 +250,16 @@ public class UserController {
         List<UserVO> userVOList = userService.getUserVOList(userPage.getRecords());
         userVOPage.setRecords(userVOList);
         return ResultUtils.success(userVOPage);
+    }
+
+    /**
+     * 生成头像的对象存储键
+     * 格式：/avatars/2025/07/31/uuid.jpg
+     */
+    private String generateAvatarKey(String suffix) {
+        String datePath = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy/MM/dd"));
+        String fileName = UUID.randomUUID().toString().substring(0, 8) + "." + suffix;
+        return String.format("/avatars/%s/%s", datePath, fileName);
     }
 
 

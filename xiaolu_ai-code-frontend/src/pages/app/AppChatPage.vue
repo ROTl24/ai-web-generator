@@ -136,6 +136,19 @@
             </a-button>
           </div>
         </div>
+        <div v-if="codeFiles.length" class="code-tabs-section">
+          <div class="code-tabs-title">生成代码</div>
+          <a-tabs v-model:activeKey="activeCodeTab" size="small" class="code-tabs">
+            <a-tab-pane v-for="file in codeFiles" :key="file.path">
+              <template #tab>
+                <span class="code-tab-label" :title="file.path">{{ file.path }}</span>
+              </template>
+              <div class="code-tab-content">
+                <MarkdownRenderer :content="buildCodeBlock(file)" />
+              </div>
+            </a-tab-pane>
+          </a-tabs>
+        </div>
         <div class="preview-content">
           <div v-if="!previewUrl && !isGenerating" class="preview-placeholder">
             <div class="placeholder-icon">🌐</div>
@@ -205,6 +218,12 @@ interface Message {
   createTime?: string
 }
 
+interface CodeFile {
+  path: string
+  language: string
+  content: string
+}
+
 const messages = ref<Message[]>([])
 const userInput = ref('')
 const isGenerating = ref(false)
@@ -219,6 +238,10 @@ const historyLoaded = ref(false)
 // 预览相关
 const previewUrl = ref('')
 const previewReady = ref(false)
+
+// 代码展示相关
+const codeFiles = ref<CodeFile[]>([])
+const activeCodeTab = ref<string>('')
 
 // 部署相关
 const deploying = ref(false)
@@ -254,6 +277,66 @@ const showAppDetail = () => {
   appDetailVisible.value = true
 }
 
+const getLanguageByPath = (filePath: string) => {
+  const match = filePath.match(/\.([a-zA-Z0-9]+)$/)
+  return match ? match[1] : ''
+}
+
+const buildCodeBlock = (file: CodeFile) => {
+  const language = file.language || getLanguageByPath(file.path)
+  const content = file.content ?? ''
+  return `\`\`\`${language}\n${content}\n\`\`\``
+}
+
+const resetCodeFiles = () => {
+  codeFiles.value = []
+  activeCodeTab.value = ''
+}
+
+const updateCodeFiles = (files: CodeFile[]) => {
+  if (!files.length) return
+  codeFiles.value = files
+  if (!activeCodeTab.value || !files.some((file) => file.path === activeCodeTab.value)) {
+    activeCodeTab.value = files[0].path
+  }
+}
+
+const extractCodeFilesFromContent = (content: string) => {
+  const files: CodeFile[] = []
+  const fileIndexMap = new Map<string, number>()
+  const regex = /\[⚒️工具调用\]\s*写入文件\s+([^\n]+)\n\s*```([^\n]*)\n([\s\S]*?)\n\s*```/g
+  let match: RegExpExecArray | null = null
+  regex.lastIndex = 0
+  while ((match = regex.exec(content)) !== null) {
+    const filePath = match[1]?.trim() || ''
+    const language = (match[2] || '').trim() || getLanguageByPath(filePath)
+    const fileContent = match[3] ?? ''
+    if (!filePath) {
+      continue
+    }
+    const fileInfo: CodeFile = {
+      path: filePath,
+      language,
+      content: fileContent,
+    }
+    if (fileIndexMap.has(filePath)) {
+      files[fileIndexMap.get(filePath)!] = fileInfo
+    } else {
+      fileIndexMap.set(filePath, files.length)
+      files.push(fileInfo)
+    }
+  }
+  let cleanedContent = content.replace(regex, '').trim()
+  const pendingIndex = cleanedContent.lastIndexOf('[⚒️工具调用] 写入文件')
+  if (pendingIndex !== -1) {
+    cleanedContent = cleanedContent.slice(0, pendingIndex).trimEnd()
+  }
+  return {
+    cleanedContent,
+    files,
+  }
+}
+
 // 加载对话历史
 const loadChatHistory = async (isLoadMore = false) => {
   if (!appId.value || loadingHistory.value) return
@@ -271,13 +354,25 @@ const loadChatHistory = async (isLoadMore = false) => {
     if (res.data.code === 0 && res.data.data) {
       const chatHistories = res.data.data.records || []
       if (chatHistories.length > 0) {
+        let latestFiles: CodeFile[] | null = null
         // 将对话历史转换为消息格式，并按时间正序排列（老消息在前）
         const historyMessages: Message[] = chatHistories
-          .map((chat) => ({
-            type: (chat.messageType === 'user' ? 'user' : 'ai') as 'user' | 'ai',
-            content: chat.message || '',
-            createTime: chat.createTime,
-          }))
+          .map((chat) => {
+            const type = (chat.messageType === 'user' ? 'user' : 'ai') as 'user' | 'ai'
+            let content = chat.message || ''
+            if (type === 'ai') {
+              const extracted = extractCodeFilesFromContent(content)
+              content = extracted.cleanedContent
+              if (!isLoadMore && !latestFiles && extracted.files.length) {
+                latestFiles = extracted.files
+              }
+            }
+            return {
+              type,
+              content,
+              createTime: chat.createTime,
+            }
+          })
           .reverse() // 反转数组，让老消息在前
         if (isLoadMore) {
           // 加载更多时，将历史消息添加到开头
@@ -285,6 +380,9 @@ const loadChatHistory = async (isLoadMore = false) => {
         } else {
           // 初始加载，直接设置消息列表
           messages.value = historyMessages
+        }
+        if (!isLoadMore && latestFiles) {
+          updateCodeFiles(latestFiles)
         }
         // 更新游标
         lastCreateTime.value = chatHistories[chatHistories.length - 1]?.createTime
@@ -429,6 +527,9 @@ const sendMessage = async () => {
 const generateCode = async (userMessage: string, aiMessageIndex: number) => {
   let eventSource: EventSource | null = null
   let streamCompleted = false
+  let rawContent = ''
+
+  resetCodeFiles()
 
   try {
     // 获取 axios 配置的 baseURL
@@ -447,8 +548,6 @@ const generateCode = async (userMessage: string, aiMessageIndex: number) => {
       withCredentials: true,
     })
 
-    let fullContent = ''
-
     // 处理接收到的消息
     eventSource.onmessage = function (event) {
       if (streamCompleted) return
@@ -460,8 +559,12 @@ const generateCode = async (userMessage: string, aiMessageIndex: number) => {
 
         // 拼接内容
         if (content !== undefined && content !== null) {
-          fullContent += content
-          messages.value[aiMessageIndex].content = fullContent
+          rawContent += content
+          const extracted = extractCodeFilesFromContent(rawContent)
+          if (extracted.files.length) {
+            updateCodeFiles(extracted.files)
+          }
+          messages.value[aiMessageIndex].content = extracted.cleanedContent
           messages.value[aiMessageIndex].loading = false
           scrollToBottom()
         }
@@ -865,6 +968,47 @@ onUnmounted(() => {
 .preview-actions {
   display: flex;
   gap: 8px;
+}
+
+.code-tabs-section {
+  padding: 12px 16px 8px;
+  border-bottom: 1px solid #e8e8e8;
+  background: #fff;
+}
+
+.code-tabs-title {
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.code-tabs :deep(.ant-tabs-nav) {
+  margin: 0;
+}
+
+.code-tab-label {
+  display: inline-block;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.code-tab-content {
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  padding: 8px 12px;
+  max-height: 280px;
+  overflow: auto;
+  background: #fafafa;
+}
+
+.code-tab-content :deep(.markdown-content) {
+  margin: 0;
+}
+
+.code-tab-content :deep(pre) {
+  margin: 0;
 }
 
 .preview-content {

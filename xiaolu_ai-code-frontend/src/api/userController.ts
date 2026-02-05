@@ -125,3 +125,29 @@ export async function updateUser(body: API.UserUpdateRequest, options?: { [key: 
     ...(options || {}),
   })
 }
+
+/** 更新当前登录用户 POST /user/update/my */
+export async function updateMyUser(
+  body: API.UserUpdateMyRequest,
+  options?: { [key: string]: any },
+) {
+  return request<API.BaseResponseBoolean>('/user/update/my', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    data: body,
+    ...(options || {}),
+  })
+}
+
+/** 上传用户头像 POST /user/avatar/upload */
+export async function uploadUserAvatar(file: File, options?: { [key: string]: any }) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return request<API.BaseResponseString>('/user/avatar/upload', {
+    method: 'POST',
+    data: formData,
+    ...(options || {}),
+  })
+}
