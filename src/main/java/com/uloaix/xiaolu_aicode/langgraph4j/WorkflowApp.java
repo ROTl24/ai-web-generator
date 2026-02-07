@@ -11,6 +11,7 @@ import org.bsc.langgraph4j.prebuilt.MessagesState;
 import org.bsc.langgraph4j.prebuilt.MessagesStateGraph;
 
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 
 import static org.bsc.langgraph4j.StateGraph.END;
 import static org.bsc.langgraph4j.StateGraph.START;
@@ -40,6 +41,7 @@ public class WorkflowApp {
         // 初始化 WorkflowContext - 只设置基本信息
         WorkflowContext initialContext = WorkflowContext.builder()
                 .originalPrompt("创建一个个人博客网站")
+                .workflowRunId(ThreadLocalRandom.current().nextLong(1, Long.MAX_VALUE))
                 .currentStep("初始化")
                 .build();
         log.info("初始输入: {}", initialContext.getOriginalPrompt());

@@ -15,6 +15,7 @@ import org.bsc.langgraph4j.prebuilt.MessagesState;
 import org.bsc.langgraph4j.prebuilt.MessagesStateGraph;
 
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 
@@ -89,6 +90,8 @@ public class CodeGenConcurrentWorkflow {
         CompiledGraph<MessagesState<String>> workflow = createWorkflow();
         WorkflowContext initialContext = WorkflowContext.builder()
                 .originalPrompt(originalPrompt)
+                // 为每次工作流执行生成唯一 runId，避免并发请求共用同一 appId 导致串行阻塞/目录冲突
+                .workflowRunId(ThreadLocalRandom.current().nextLong(1, Long.MAX_VALUE))
                 .currentStep("初始化")
                 .build();
         GraphRepresentation graph = workflow.getGraph(GraphRepresentation.Type.MERMAID);

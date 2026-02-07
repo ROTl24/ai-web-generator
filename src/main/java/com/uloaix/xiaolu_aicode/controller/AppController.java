@@ -24,6 +24,7 @@ import com.uloaix.xiaolu_aicode.service.UserService;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.*;
@@ -42,6 +43,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/app")
+@Slf4j
 public class AppController {
 
     @Resource
@@ -66,30 +68,52 @@ public class AppController {
     public Flux<ServerSentEvent<String>> chatToGenCode(@RequestParam Long appId,
                                                        @RequestParam String message,
                                                        HttpServletRequest request) {
-        // 参数校验
-        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用ID无效");
-        ThrowUtils.throwIf(StrUtil.isBlank(message), ErrorCode.PARAMS_ERROR, "用户消息不能为空");
-        // 获取当前登录用户
-        User loginUser = userService.getLoginUser(request);
-        // 调用服务生成代码（流式）
-        Flux<String> contentFlux = appService.chatToGenCode(appId, message, loginUser);
-        // 转换为 ServerSentEvent 格式
-        return contentFlux
+        // 关键点：
+        // - 必须把所有异常“留在流内”（defer + onErrorResume），否则会落到 GlobalExceptionHandler 返回 BaseResponse，
+        //   在 produces=text/event-stream 下触发 Spring converter 异常（No converter for BaseResponse...）。
+        return Flux.defer(() -> {
+                    // 参数校验（放进 defer，避免同步抛异常走全局异常处理器）
+                    ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用ID无效");
+                    ThrowUtils.throwIf(StrUtil.isBlank(message), ErrorCode.PARAMS_ERROR, "用户消息不能为空");
+                    // 获取当前登录用户
+                    User loginUser = userService.getLoginUser(request);
+                    // 调用服务生成代码（流式）
+                    return appService.chatToGenCode(appId, message, loginUser);
+                })
+                // 转换为 ServerSentEvent 格式
                 .map(chunk -> {
-                    // 将内容包装成JSON对象
                     Map<String, String> wrapper = Map.of("d", chunk);
                     String jsonData = JSONUtil.toJsonStr(wrapper);
                     return ServerSentEvent.<String>builder()
                             .data(jsonData)
                             .build();
                 })
-                .concatWith(Mono.just(
-                        // 发送结束事件
-                        ServerSentEvent.<String>builder()
-                                .event("done")
-                                .data("")
-                                .build()
-                ));
+                // SSE 流内错误：转成 event=error 的 SSE 事件并正常结束
+                .onErrorResume(e -> {
+                    int code = ErrorCode.SYSTEM_ERROR.getCode();
+                    String errMsg = e.getMessage();
+                    if (e instanceof BusinessException be) {
+                        code = be.getCode();
+                        errMsg = be.getMessage();
+                    }
+                    if (StrUtil.isBlank(errMsg)) {
+                        errMsg = "上游模型/系统异常";
+                    }
+                    log.error("SSE /app/chat/gen/code 上游异常, appId={}, msg={}", appId, errMsg, e);
+                    String jsonData = JSONUtil.toJsonStr(Map.of(
+                            "code", String.valueOf(code),
+                            "message", errMsg
+                    ));
+                    return Flux.just(ServerSentEvent.<String>builder()
+                            .event("error")
+                            .data(jsonData)
+                            .build());
+                })
+                // 发送结束事件（无论成功/失败都补一个 done，方便前端统一收敛）
+                .concatWith(Mono.just(ServerSentEvent.<String>builder()
+                        .event("done")
+                        .data("")
+                        .build()));
     }
 
 

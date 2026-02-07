@@ -16,7 +16,9 @@ import com.uloaix.xiaolu_aicode.core.saver.CodeFileSaverExecutor;
 import com.uloaix.xiaolu_aicode.exception.BusinessException;
 import com.uloaix.xiaolu_aicode.exception.ErrorCode;
 import com.uloaix.xiaolu_aicode.model.enums.CodeGenTypeEnum;
+import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.chat.response.PartialToolCall;
 import dev.langchain4j.service.TokenStream;
 import dev.langchain4j.service.tool.ToolExecution;
 import jakarta.annotation.Resource;
@@ -28,6 +30,7 @@ import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * AI 代码生成外观类，组合生成和保存功能，用于统一入口
@@ -136,24 +139,41 @@ public class AiCodeGeneratorFacade {
      */
     private Flux<String> processTokenStream(TokenStream tokenStream) {
         return Flux.create(sink -> {
+            AtomicBoolean terminated = new AtomicBoolean(false);
             tokenStream.onPartialResponse((String partialResponse) -> {
                         AiResponseMessage aiResponseMessage = new AiResponseMessage(partialResponse);
-                        sink.next(JSONUtil.toJsonStr(aiResponseMessage));
+                        if (!sink.isCancelled() && !terminated.get()) {
+                            sink.next(JSONUtil.toJsonStr(aiResponseMessage));
+                        }
                     })
-                    .onPartialToolExecutionRequest((index, toolExecutionRequest) -> {
+                    // LangChain4j 1.11.x：工具调用以 PartialToolCall 形式流式返回
+                    .onPartialToolCall((PartialToolCall partialToolCall) -> {
+                        ToolExecutionRequest toolExecutionRequest = ToolExecutionRequest.builder()
+                                .id(partialToolCall.id())
+                                .name(partialToolCall.name())
+                                .arguments(partialToolCall.partialArguments())
+                                .build();
                         ToolRequestMessage toolRequestMessage = new ToolRequestMessage(toolExecutionRequest);
-                        sink.next(JSONUtil.toJsonStr(toolRequestMessage));
+                        if (!sink.isCancelled() && !terminated.get()) {
+                            sink.next(JSONUtil.toJsonStr(toolRequestMessage));
+                        }
                     })
                     .onToolExecuted((ToolExecution toolExecution) -> {
                         ToolExecutedMessage toolExecutedMessage = new ToolExecutedMessage(toolExecution);
-                        sink.next(JSONUtil.toJsonStr(toolExecutedMessage));
+                        if (!sink.isCancelled() && !terminated.get()) {
+                            sink.next(JSONUtil.toJsonStr(toolExecutedMessage));
+                        }
                     })
                     .onCompleteResponse((ChatResponse response) -> {
-                        sink.complete();
+                        if (terminated.compareAndSet(false, true)) {
+                            sink.complete();
+                        }
                     })
                     .onError((Throwable error) -> {
-                        error.printStackTrace();
-                        sink.error(error);
+                        log.error("TokenStream 上游错误", error);
+                        if (terminated.compareAndSet(false, true)) {
+                            sink.error(error);
+                        }
                     })
                     .start();
         });

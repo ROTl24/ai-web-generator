@@ -1,5 +1,7 @@
 package com.uloaix.xiaolu_aicode.config;
 
+import dev.langchain4j.http.client.spring.restclient.SpringRestClient;
+import dev.langchain4j.http.client.spring.restclient.SpringRestClientBuilder;
 import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import lombok.Data;
@@ -9,12 +11,12 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Scope;
 
 /**
- * 推理流式模型配置
+ * 流式对话模型配置（多例）
  */
 @Configuration
-@ConfigurationProperties(prefix = "langchain4j.open-ai.reasoning-streaming-chat-model")
+@ConfigurationProperties(prefix = "langchain4j.open-ai.streaming-chat-model")
 @Data
-public class ReasoningStreamingChatModelConfig {
+public class StreamingChatModelConfig {
 
     private String baseUrl;
 
@@ -26,18 +28,22 @@ public class ReasoningStreamingChatModelConfig {
 
     private Double temperature;
 
-    private Boolean logRequests = false;
+    private boolean logRequests;
 
-    private Boolean logResponses = false;
+    private boolean logResponses;
 
     /**
-     * 推理流式模型（用于Vue）
-     * @return StreamingChatModel
+     * 流式模型
+     * @return 创建流式对话模型
      */
     @Bean
     @Scope("prototype")
-    public StreamingChatModel reasoningStreamingChatModelPrototype() {
+    public StreamingChatModel streamingChatModelPrototype() {
+
+        SpringRestClientBuilder httpClientBuilder = SpringRestClient.builder();
+
         OpenAiStreamingChatModel.OpenAiStreamingChatModelBuilder builder = OpenAiStreamingChatModel.builder()
+                .httpClientBuilder(httpClientBuilder) // ✅ 关键：显式指定，避免多 HTTP client 冲突
                 .apiKey(apiKey)
                 .baseUrl(baseUrl)
                 .modelName(modelName)
@@ -59,5 +65,5 @@ public class ReasoningStreamingChatModelConfig {
 
         return builder.build();
     }
-}
 
+}

@@ -56,15 +56,24 @@ public class JsonMessageStreamHandler {
                 .filter(StrUtil::isNotEmpty) // 过滤空字串
                 .doOnComplete(() -> {
                     // 流式响应完成后，添加 AI 消息到对话历史
-                    String aiResponse = chatHistoryStringBuilder.toString();
-                    chatHistoryService.addChatMessage(appId, aiResponse, ChatHistoryMessageTypeEnum.AI.getValue(), loginUser.getId());
-                    String projectPath = AppConstant.CODE_OUTPUT_ROOT_DIR + "/vue_project_" + appId;
-                    vueProjectBuilder.buildProjectAsync(projectPath);
+                    // 注意：doOnComplete 里的异常会把“正常结束”变成 error，进而影响 SSE（触发全局异常处理器）。
+                    try {
+                        String aiResponse = chatHistoryStringBuilder.toString();
+                        chatHistoryService.addChatMessage(appId, aiResponse, ChatHistoryMessageTypeEnum.AI.getValue(), loginUser.getId());
+                        String projectPath = AppConstant.CODE_OUTPUT_ROOT_DIR + "/vue_project_" + appId;
+                        vueProjectBuilder.buildProjectAsync(projectPath);
+                    } catch (Exception e) {
+                        log.error("流式完成回调失败（已忽略），appId={}", appId, e);
+                    }
                 })
                 .doOnError(error -> {
                     // 如果AI回复失败，也要记录错误消息
-                    String errorMessage = "AI回复失败: " + error.getMessage();
-                    chatHistoryService.addChatMessage(appId, errorMessage, ChatHistoryMessageTypeEnum.AI.getValue(), loginUser.getId());
+                    try {
+                        String errorMessage = "AI回复失败: " + error.getMessage();
+                        chatHistoryService.addChatMessage(appId, errorMessage, ChatHistoryMessageTypeEnum.AI.getValue(), loginUser.getId());
+                    } catch (Exception e) {
+                        log.error("流式错误回调失败（已忽略），appId={}", appId, e);
+                    }
                 });
     }
 

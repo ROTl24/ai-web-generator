@@ -12,6 +12,7 @@ import org.bsc.langgraph4j.prebuilt.MessagesState;
 import reactor.core.publisher.Flux;
 
 import java.time.Duration;
+import java.util.concurrent.ThreadLocalRandom;
 
 import static org.bsc.langgraph4j.action.AsyncNodeAction.node_async;
 
@@ -31,8 +32,12 @@ public class CodeGeneratorNode {
             // 获取 AI 代码生成外观服务
             AiCodeGeneratorFacade codeGeneratorFacade = SpringContextUtil.getBean(AiCodeGeneratorFacade.class);
             log.info("开始生成代码，类型: {} ({})", generationType.getValue(), generationType.getText());
-            // 先使用固定的 appId (后续再整合到业务中)
-            Long appId = 0L;
+            // 使用每次工作流独立的 runId 作为 appId（用于隔离缓存/对话记忆/输出目录，避免并发串行阻塞）
+            Long appId = context.getWorkflowRunId();
+            if (appId == null || appId <= 0) {
+                appId = ThreadLocalRandom.current().nextLong(1, Long.MAX_VALUE);
+                context.setWorkflowRunId(appId);
+            }
             // 调用流式代码生成
             Flux<String> codeStream = codeGeneratorFacade.generateAndSaveCodeStream(userMessage, generationType, appId);
             // 同步等待流式输出完成

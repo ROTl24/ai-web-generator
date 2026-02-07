@@ -35,6 +35,11 @@ public class WorkflowContext implements Serializable {
     private String currentStep;
 
     /**
+     * 本次工作流运行 ID（用于并发隔离：缓存 key、输出目录、对话记忆等）
+     */
+    private Long workflowRunId;
+
+    /**
      * 用户原始输入的提示词
      */
     private String originalPrompt;

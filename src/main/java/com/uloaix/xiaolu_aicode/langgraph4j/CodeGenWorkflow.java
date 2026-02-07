@@ -17,6 +17,7 @@ import org.bsc.langgraph4j.prebuilt.MessagesStateGraph;
 import reactor.core.publisher.Flux;
 
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 
 import static org.bsc.langgraph4j.StateGraph.END;
 import static org.bsc.langgraph4j.StateGraph.START;
@@ -88,6 +89,8 @@ public class CodeGenWorkflow {
         // 初始化 WorkflowContext
         WorkflowContext initialContext = WorkflowContext.builder()
                 .originalPrompt(originalPrompt)
+                // 为每次工作流执行生成唯一 runId，避免并发请求共用同一 appId 导致串行阻塞/目录冲突
+                .workflowRunId(ThreadLocalRandom.current().nextLong(1, Long.MAX_VALUE))
                 .currentStep("初始化")
                 .build();
 
@@ -141,11 +144,14 @@ public class CodeGenWorkflow {
                     CompiledGraph<MessagesState<String>> workflow = createWorkflow();
                     WorkflowContext initialContext = WorkflowContext.builder()
                             .originalPrompt(originalPrompt)
+                            // 为每次工作流执行生成唯一 runId，避免并发请求共用同一 appId 导致串行阻塞/目录冲突
+                            .workflowRunId(ThreadLocalRandom.current().nextLong(1, Long.MAX_VALUE))
                             .currentStep("初始化")
                             .build();
                     sink.next(formatSseEvent("workflow_start", Map.of(
                             "message", "开始执行代码生成工作流",
-                            "originalPrompt", originalPrompt
+                            "originalPrompt", originalPrompt,
+                            "runId", initialContext.getWorkflowRunId()
                     )));
                     GraphRepresentation graph = workflow.getGraph(GraphRepresentation.Type.MERMAID);
                     log.info("工作流图:\n{}", graph.content());
