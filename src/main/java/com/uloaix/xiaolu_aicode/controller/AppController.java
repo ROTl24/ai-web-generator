@@ -1,8 +1,21 @@
 package com.uloaix.xiaolu_aicode.controller;
 
-import cn.hutool.core.bean.BeanUtil;
-import cn.hutool.core.util.StrUtil;
-import cn.hutool.json.JSONUtil;
+import java.io.File;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
 import com.mybatisflex.core.paginate.Page;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.uloaix.xiaolu_aicode.annotation.AuthCheck;
@@ -14,27 +27,27 @@ import com.uloaix.xiaolu_aicode.constant.UserConstant;
 import com.uloaix.xiaolu_aicode.exception.BusinessException;
 import com.uloaix.xiaolu_aicode.exception.ErrorCode;
 import com.uloaix.xiaolu_aicode.exception.ThrowUtils;
-import com.uloaix.xiaolu_aicode.model.dto.app.*;
+import com.uloaix.xiaolu_aicode.model.dto.app.AppAddRequest;
+import com.uloaix.xiaolu_aicode.model.dto.app.AppAdminUpdateRequest;
+import com.uloaix.xiaolu_aicode.model.dto.app.AppDeployRequest;
+import com.uloaix.xiaolu_aicode.model.dto.app.AppQueryRequest;
+import com.uloaix.xiaolu_aicode.model.dto.app.AppUpdateRequest;
 import com.uloaix.xiaolu_aicode.model.entity.App;
 import com.uloaix.xiaolu_aicode.model.entity.User;
 import com.uloaix.xiaolu_aicode.model.vo.AppVO;
 import com.uloaix.xiaolu_aicode.service.AppService;
 import com.uloaix.xiaolu_aicode.service.ProjectDownloadService;
 import com.uloaix.xiaolu_aicode.service.UserService;
+
+import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.util.StrUtil;
+import cn.hutool.json.JSONUtil;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.MediaType;
-import org.springframework.http.codec.ServerSentEvent;
-import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-
-import java.io.File;
-import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Map;
 
 /**
  * 应用 控制层。
@@ -54,6 +67,8 @@ public class AppController {
 
     @Resource
     private ProjectDownloadService projectDownloadService;
+
+
 
 
     /**
@@ -240,6 +255,11 @@ public class AppController {
      * @return 精选应用列表
      */
     @PostMapping("/good/list/page/vo")
+    @Cacheable(
+            value = "good_app_page",
+            key = "T(com.uloaix.xiaolu_aicode.utils.CacheKeyUtils).generateKey(#appQueryRequest)",
+            condition = "#appQueryRequest.pageNum <= 10"
+    )
     public BaseResponse<Page<AppVO>> listGoodAppVOByPage(@RequestBody AppQueryRequest appQueryRequest) {
         ThrowUtils.throwIf(appQueryRequest == null, ErrorCode.PARAMS_ERROR);
         // 限制每页最多 20 个

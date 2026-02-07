@@ -55,6 +55,12 @@
               </div>
               <div class="message-content">
                 <MarkdownRenderer v-if="message.content" :content="message.content" />
+                <div v-if="message.codeFiles && message.codeFiles.length" class="message-code-files">
+                  <div v-for="file in message.codeFiles" :key="file.path" class="message-code-file">
+                    <div class="message-code-path">{{ file.path }}</div>
+                    <MarkdownRenderer :content="buildCodeBlock(file)" />
+                  </div>
+                </div>
                 <div v-if="message.loading" class="loading-indicator">
                   <a-spin size="small" />
                   <span>AI 正在思考...</span>
@@ -136,19 +142,6 @@
             </a-button>
           </div>
         </div>
-        <div v-if="codeFiles.length" class="code-tabs-section">
-          <div class="code-tabs-title">生成代码</div>
-          <a-tabs v-model:activeKey="activeCodeTab" size="small" class="code-tabs">
-            <a-tab-pane v-for="file in codeFiles" :key="file.path">
-              <template #tab>
-                <span class="code-tab-label" :title="file.path">{{ file.path }}</span>
-              </template>
-              <div class="code-tab-content">
-                <MarkdownRenderer :content="buildCodeBlock(file)" />
-              </div>
-            </a-tab-pane>
-          </a-tabs>
-        </div>
         <div class="preview-content">
           <div v-if="!previewUrl && !isGenerating" class="preview-placeholder">
             <div class="placeholder-icon">🌐</div>
@@ -216,6 +209,7 @@ interface Message {
   content: string
   loading?: boolean
   createTime?: string
+  codeFiles?: CodeFile[]
 }
 
 interface CodeFile {
@@ -238,10 +232,6 @@ const historyLoaded = ref(false)
 // 预览相关
 const previewUrl = ref('')
 const previewReady = ref(false)
-
-// 代码展示相关
-const codeFiles = ref<CodeFile[]>([])
-const activeCodeTab = ref<string>('')
 
 // 部署相关
 const deploying = ref(false)
@@ -286,19 +276,6 @@ const buildCodeBlock = (file: CodeFile) => {
   const language = file.language || getLanguageByPath(file.path)
   const content = file.content ?? ''
   return `\`\`\`${language}\n${content}\n\`\`\``
-}
-
-const resetCodeFiles = () => {
-  codeFiles.value = []
-  activeCodeTab.value = ''
-}
-
-const updateCodeFiles = (files: CodeFile[]) => {
-  if (!files.length) return
-  codeFiles.value = files
-  if (!activeCodeTab.value || !files.some((file) => file.path === activeCodeTab.value)) {
-    activeCodeTab.value = files[0].path
-  }
 }
 
 const extractCodeFilesFromContent = (content: string) => {
@@ -354,23 +331,24 @@ const loadChatHistory = async (isLoadMore = false) => {
     if (res.data.code === 0 && res.data.data) {
       const chatHistories = res.data.data.records || []
       if (chatHistories.length > 0) {
-        let latestFiles: CodeFile[] | null = null
         // 将对话历史转换为消息格式，并按时间正序排列（老消息在前）
         const historyMessages: Message[] = chatHistories
           .map((chat) => {
             const type = (chat.messageType === 'user' ? 'user' : 'ai') as 'user' | 'ai'
             let content = chat.message || ''
+            let codeFiles: CodeFile[] | undefined = undefined
             if (type === 'ai') {
               const extracted = extractCodeFilesFromContent(content)
               content = extracted.cleanedContent
-              if (!isLoadMore && !latestFiles && extracted.files.length) {
-                latestFiles = extracted.files
+              if (extracted.files.length) {
+                codeFiles = extracted.files
               }
             }
             return {
               type,
               content,
               createTime: chat.createTime,
+              codeFiles,
             }
           })
           .reverse() // 反转数组，让老消息在前
@@ -380,9 +358,6 @@ const loadChatHistory = async (isLoadMore = false) => {
         } else {
           // 初始加载，直接设置消息列表
           messages.value = historyMessages
-        }
-        if (!isLoadMore && latestFiles) {
-          updateCodeFiles(latestFiles)
         }
         // 更新游标
         lastCreateTime.value = chatHistories[chatHistories.length - 1]?.createTime
@@ -463,6 +438,7 @@ const sendInitialMessage = async (prompt: string) => {
     type: 'ai',
     content: '',
     loading: true,
+    codeFiles: [],
   })
 
   await nextTick()
@@ -513,6 +489,7 @@ const sendMessage = async () => {
     type: 'ai',
     content: '',
     loading: true,
+    codeFiles: [],
   })
 
   await nextTick()
@@ -528,8 +505,6 @@ const generateCode = async (userMessage: string, aiMessageIndex: number) => {
   let eventSource: EventSource | null = null
   let streamCompleted = false
   let rawContent = ''
-
-  resetCodeFiles()
 
   try {
     // 获取 axios 配置的 baseURL
@@ -561,10 +536,10 @@ const generateCode = async (userMessage: string, aiMessageIndex: number) => {
         if (content !== undefined && content !== null) {
           rawContent += content
           const extracted = extractCodeFilesFromContent(rawContent)
-          if (extracted.files.length) {
-            updateCodeFiles(extracted.files)
-          }
           messages.value[aiMessageIndex].content = extracted.cleanedContent
+          if (extracted.files.length) {
+            messages.value[aiMessageIndex].codeFiles = extracted.files
+          }
           messages.value[aiMessageIndex].loading = false
           scrollToBottom()
         }
@@ -581,6 +556,13 @@ const generateCode = async (userMessage: string, aiMessageIndex: number) => {
       streamCompleted = true
       isGenerating.value = false
       eventSource?.close()
+
+      const extracted = extractCodeFilesFromContent(rawContent)
+      if (messages.value[aiMessageIndex]) {
+        messages.value[aiMessageIndex].content = extracted.cleanedContent
+        messages.value[aiMessageIndex].codeFiles = extracted.files
+        messages.value[aiMessageIndex].loading = false
+      }
 
       // 延迟更新预览，确保后端已完成处理
       setTimeout(async () => {
@@ -906,6 +888,35 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
+.message-code-files {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.message-code-file {
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+  padding: 8px 12px;
+  background: #fafafa;
+}
+
+.message-code-path {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 6px;
+  font-family: 'Monaco', 'Menlo', monospace;
+}
+
+.message-code-file :deep(.markdown-content) {
+  margin: 0;
+}
+
+.message-code-file :deep(pre) {
+  margin: 0;
+}
+
 .loading-indicator {
   display: flex;
   align-items: center;
@@ -968,47 +979,6 @@ onUnmounted(() => {
 .preview-actions {
   display: flex;
   gap: 8px;
-}
-
-.code-tabs-section {
-  padding: 12px 16px 8px;
-  border-bottom: 1px solid #e8e8e8;
-  background: #fff;
-}
-
-.code-tabs-title {
-  font-size: 13px;
-  color: #666;
-  margin-bottom: 8px;
-}
-
-.code-tabs :deep(.ant-tabs-nav) {
-  margin: 0;
-}
-
-.code-tab-label {
-  display: inline-block;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.code-tab-content {
-  border: 1px solid #f0f0f0;
-  border-radius: 6px;
-  padding: 8px 12px;
-  max-height: 280px;
-  overflow: auto;
-  background: #fafafa;
-}
-
-.code-tab-content :deep(.markdown-content) {
-  margin: 0;
-}
-
-.code-tab-content :deep(pre) {
-  margin: 0;
 }
 
 .preview-content {

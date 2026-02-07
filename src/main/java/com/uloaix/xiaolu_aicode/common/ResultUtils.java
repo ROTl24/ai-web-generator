@@ -2,6 +2,9 @@ package com.uloaix.xiaolu_aicode.common;
 
 import com.uloaix.xiaolu_aicode.exception.ErrorCode;
 
+/**
+ * 结果工具类
+ */
 public class ResultUtils {
 
     /**
