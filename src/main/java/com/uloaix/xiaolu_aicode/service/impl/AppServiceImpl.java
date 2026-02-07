@@ -25,12 +25,16 @@ import com.uloaix.xiaolu_aicode.model.enums.ChatHistoryMessageTypeEnum;
 import com.uloaix.xiaolu_aicode.model.enums.CodeGenTypeEnum;
 import com.uloaix.xiaolu_aicode.model.vo.AppVO;
 import com.uloaix.xiaolu_aicode.model.vo.UserVO;
+import com.uloaix.xiaolu_aicode.ratelimiter.annotation.RateLimit;
+import com.uloaix.xiaolu_aicode.ratelimiter.enums.RateLimitType;
 import com.uloaix.xiaolu_aicode.service.AppService;
 import com.uloaix.xiaolu_aicode.service.ChatHistoryService;
 import com.uloaix.xiaolu_aicode.service.UserService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.web.bind.annotation.GetMapping;
 import reactor.core.publisher.Flux;
 
 import java.io.File;
@@ -188,6 +192,8 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         }).collect(Collectors.toList());
     }
 
+    @GetMapping(value = "/chat/gen/code", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @RateLimit(limitType = RateLimitType.USER, rate = 5, rateInterval = 60, message = "AI 对话请求过于频繁，请稍后再试")
     @Override
     public Flux<String> chatToGenCode(Long appId, String message, User loginUser) {
         // 1. 参数校验

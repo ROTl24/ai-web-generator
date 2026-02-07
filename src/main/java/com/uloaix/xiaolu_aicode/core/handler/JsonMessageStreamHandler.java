@@ -16,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
+import java.nio.file.Paths;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -60,7 +61,7 @@ public class JsonMessageStreamHandler {
                     try {
                         String aiResponse = chatHistoryStringBuilder.toString();
                         chatHistoryService.addChatMessage(appId, aiResponse, ChatHistoryMessageTypeEnum.AI.getValue(), loginUser.getId());
-                        String projectPath = AppConstant.CODE_OUTPUT_ROOT_DIR + "/vue_project_" + appId;
+                        String projectPath = Paths.get(AppConstant.CODE_OUTPUT_ROOT_DIR, "vue_project_" + appId).toString();
                         vueProjectBuilder.buildProjectAsync(projectPath);
                     } catch (Exception e) {
                         log.error("流式完成回调失败（已忽略），appId={}", appId, e);

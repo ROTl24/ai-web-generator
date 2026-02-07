@@ -143,13 +143,19 @@
           </div>
         </div>
         <div class="preview-content">
-          <div v-if="!previewUrl && !isGenerating" class="preview-placeholder">
-            <div class="placeholder-icon">🌐</div>
-            <p>网站文件生成完成后将在这里展示</p>
-          </div>
-          <div v-else-if="isGenerating" class="preview-loading">
+          <div v-if="isGenerating" class="preview-loading">
             <a-spin size="large" />
             <p>正在生成网站...</p>
+          </div>
+          <div v-else-if="isBuilding" class="preview-building">
+            <a-spin size="large" />
+            <p>正在构建项目...</p>
+            <a-progress class="build-progress" :percent="buildProgressPercent" :status="buildProgressStatus" />
+            <p class="build-message">{{ buildProgress?.message || '构建中...' }}</p>
+          </div>
+          <div v-else-if="!previewUrl" class="preview-placeholder">
+            <div class="placeholder-icon">🌐</div>
+            <p>网站文件生成完成后将在这里展示</p>
           </div>
           <iframe v-else :src="previewUrl" class="preview-iframe" frameborder="0" @load="onIframeLoad"></iframe>
         </div>
@@ -218,6 +224,13 @@ interface CodeFile {
   content: string
 }
 
+interface BuildProgressEvent {
+  status: 'waiting' | 'running' | 'success' | 'failed'
+  step?: string
+  percent?: number
+  message?: string
+}
+
 const messages = ref<Message[]>([])
 const userInput = ref('')
 const isGenerating = ref(false)
@@ -232,6 +245,9 @@ const historyLoaded = ref(false)
 // 预览相关
 const previewUrl = ref('')
 const previewReady = ref(false)
+const isBuilding = ref(false)
+const buildProgress = ref<BuildProgressEvent | null>(null)
+let buildEventSource: EventSource | null = null
 
 // 部署相关
 const deploying = ref(false)
@@ -257,6 +273,18 @@ const isOwner = computed(() => {
 
 const isAdmin = computed(() => {
   return loginUserStore.loginUser.userRole === 'admin'
+})
+
+const buildProgressPercent = computed(() => buildProgress.value?.percent ?? 0)
+const buildProgressStatus = computed(() => {
+  const status = buildProgress.value?.status
+  if (status === 'failed') {
+    return 'exception'
+  }
+  if (status === 'success') {
+    return 'success'
+  }
+  return 'active'
 })
 
 // 应用详情相关
@@ -313,6 +341,8 @@ const extractCodeFilesFromContent = (content: string) => {
     files,
   }
 }
+
+
 
 // 加载对话历史
 const loadChatHistory = async (isLoadMore = false) => {
@@ -500,6 +530,102 @@ const sendMessage = async () => {
   await generateCode(message, aiMessageIndex)
 }
 
+const closeBuildProgressStream = () => {
+  if (buildEventSource) {
+    buildEventSource.close()
+    buildEventSource = null
+  }
+}
+
+const startBuildProgressStream = () => {
+  if (!appId.value) return
+  closeBuildProgressStream()
+  isBuilding.value = true
+  buildProgress.value = {
+    status: 'waiting',
+    percent: 0,
+    message: '等待构建开始...',
+  }
+  previewUrl.value = ''
+  previewReady.value = false
+  isEditMode.value = false
+
+  let buildStreamCompleted = false
+  try {
+    const baseURL = request.defaults.baseURL || API_BASE_URL
+    const params = new URLSearchParams({
+      appId: appId.value || '',
+    })
+    const url = `${baseURL}/app/build/progress?${params}`
+    buildEventSource = new EventSource(url, {
+      withCredentials: true,
+    })
+
+    buildEventSource.addEventListener('progress', function (event) {
+      if (buildStreamCompleted) return
+      try {
+        const data = JSON.parse((event as MessageEvent).data) as BuildProgressEvent
+        buildProgress.value = data
+      } catch (error) {
+        console.error('解析构建进度失败:', error)
+      }
+    })
+
+    buildEventSource.addEventListener('done', async function (event) {
+      if (buildStreamCompleted) return
+      buildStreamCompleted = true
+      if ((event as MessageEvent).data) {
+        try {
+          const data = JSON.parse((event as MessageEvent).data) as BuildProgressEvent
+          buildProgress.value = data
+        } catch (error) {
+          console.error('解析构建完成事件失败:', error)
+        }
+      }
+      const finalStatus = buildProgress.value?.status
+      isBuilding.value = false
+      closeBuildProgressStream()
+      if (finalStatus === 'failed') {
+        message.error(buildProgress.value?.message || '构建失败，请重试')
+        return
+      }
+      await fetchAppInfo()
+      updatePreview()
+    })
+
+    buildEventSource.addEventListener('error', function (event) {
+      if (buildStreamCompleted) return
+      buildStreamCompleted = true
+      try {
+        const data = JSON.parse((event as MessageEvent).data)
+        message.error(data?.message || '构建失败，请重试')
+      } catch (error) {
+        message.error('构建失败，请重试')
+      }
+      isBuilding.value = false
+      closeBuildProgressStream()
+    })
+
+    buildEventSource.onerror = function () {
+      if (buildStreamCompleted) return
+      if (buildEventSource?.readyState === EventSource.CONNECTING) {
+        buildStreamCompleted = true
+        isBuilding.value = false
+        closeBuildProgressStream()
+      } else {
+        message.error('构建进度连接错误')
+        isBuilding.value = false
+        closeBuildProgressStream()
+      }
+    }
+  } catch (error) {
+    console.error('创建构建进度 EventSource 失败：', error)
+    message.error('构建进度连接失败')
+    isBuilding.value = false
+    closeBuildProgressStream()
+  }
+}
+
 // 生成代码 - 使用 EventSource 处理流式响应
 const generateCode = async (userMessage: string, aiMessageIndex: number) => {
   let eventSource: EventSource | null = null
@@ -549,6 +675,29 @@ const generateCode = async (userMessage: string, aiMessageIndex: number) => {
       }
     }
 
+    // 处理business-error事件（后端限流等错误）
+    eventSource.addEventListener('business-error', function (event: MessageEvent) {
+      if (streamCompleted) return
+
+      try {
+        const errorData = JSON.parse(event.data)
+        console.error('SSE业务错误事件:', errorData)
+
+        // 显示具体的错误信息
+        const errorMessage = errorData.message || '生成过程中出现错误'
+        messages.value[aiMessageIndex].content = `❌ ${errorMessage}`
+        messages.value[aiMessageIndex].loading = false
+        message.error(errorMessage)
+
+        streamCompleted = true
+        isGenerating.value = false
+        eventSource?.close()
+      } catch (parseError) {
+        console.error('解析错误事件失败:', parseError, '原始数据:', event.data)
+        handleError(new Error('服务器返回错误'), aiMessageIndex)
+      }
+    })
+
     // 处理done事件
     eventSource.addEventListener('done', function () {
       if (streamCompleted) return
@@ -564,11 +713,16 @@ const generateCode = async (userMessage: string, aiMessageIndex: number) => {
         messages.value[aiMessageIndex].loading = false
       }
 
-      // 延迟更新预览，确保后端已完成处理
-      setTimeout(async () => {
-        await fetchAppInfo()
-        updatePreview()
-      }, 1000)
+      const codeGenType = appInfo.value?.codeGenType || CodeGenTypeEnum.HTML
+      if (codeGenType === CodeGenTypeEnum.VUE_PROJECT) {
+        startBuildProgressStream()
+      } else {
+        // 延迟更新预览，确保后端已完成处理
+        setTimeout(async () => {
+          await fetchAppInfo()
+          updatePreview()
+        }, 1000)
+      }
     })
 
     // 处理错误
@@ -580,10 +734,15 @@ const generateCode = async (userMessage: string, aiMessageIndex: number) => {
         isGenerating.value = false
         eventSource?.close()
 
-        setTimeout(async () => {
-          await fetchAppInfo()
-          updatePreview()
-        }, 1000)
+        const codeGenType = appInfo.value?.codeGenType || CodeGenTypeEnum.HTML
+        if (codeGenType === CodeGenTypeEnum.VUE_PROJECT) {
+          startBuildProgressStream()
+        } else {
+          setTimeout(async () => {
+            await fetchAppInfo()
+            updatePreview()
+          }, 1000)
+        }
       } else {
         handleError(new Error('SSE连接错误'), aiMessageIndex)
       }
@@ -777,7 +936,7 @@ onMounted(() => {
 
 // 清理资源
 onUnmounted(() => {
-  // EventSource 会在组件卸载时自动清理
+  closeBuildProgressStream()
 })
 </script>
 
@@ -1010,8 +1169,27 @@ onUnmounted(() => {
   color: #666;
 }
 
+.preview-building {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #666;
+}
+
 .preview-loading p {
   margin-top: 16px;
+}
+
+.build-progress {
+  width: 70%;
+  margin-top: 12px;
+}
+
+.build-message {
+  margin-top: 8px;
+  color: #888;
 }
 
 .preview-iframe {

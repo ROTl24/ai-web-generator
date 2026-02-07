@@ -4,6 +4,7 @@ import java.io.File;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.nio.file.Paths;
 
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.MediaType;
@@ -24,6 +25,7 @@ import com.uloaix.xiaolu_aicode.common.DeleteRequest;
 import com.uloaix.xiaolu_aicode.common.ResultUtils;
 import com.uloaix.xiaolu_aicode.constant.AppConstant;
 import com.uloaix.xiaolu_aicode.constant.UserConstant;
+import com.uloaix.xiaolu_aicode.core.progress.BuildProgressService;
 import com.uloaix.xiaolu_aicode.exception.BusinessException;
 import com.uloaix.xiaolu_aicode.exception.ErrorCode;
 import com.uloaix.xiaolu_aicode.exception.ThrowUtils;
@@ -34,6 +36,8 @@ import com.uloaix.xiaolu_aicode.model.dto.app.AppQueryRequest;
 import com.uloaix.xiaolu_aicode.model.dto.app.AppUpdateRequest;
 import com.uloaix.xiaolu_aicode.model.entity.App;
 import com.uloaix.xiaolu_aicode.model.entity.User;
+import com.uloaix.xiaolu_aicode.model.enums.BuildProgressStatusEnum;
+import com.uloaix.xiaolu_aicode.model.enums.CodeGenTypeEnum;
 import com.uloaix.xiaolu_aicode.model.vo.AppVO;
 import com.uloaix.xiaolu_aicode.service.AppService;
 import com.uloaix.xiaolu_aicode.service.ProjectDownloadService;
@@ -68,6 +72,8 @@ public class AppController {
     @Resource
     private ProjectDownloadService projectDownloadService;
 
+    @Resource
+    private BuildProgressService buildProgressService;
 
 
 
@@ -129,6 +135,56 @@ public class AppController {
                         .event("done")
                         .data("")
                         .build()));
+    }
+
+    /**
+     * Vue 项目构建进度（SSE）
+     */
+    @GetMapping(value = "/build/progress", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<ServerSentEvent<String>> watchBuildProgress(@RequestParam Long appId,
+                                                            HttpServletRequest request) {
+        return Flux.defer(() -> {
+                    ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用ID无效");
+                    User loginUser = userService.getLoginUser(request);
+                    App app = appService.getById(appId);
+                    ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
+                    boolean noAuth = !app.getUserId().equals(loginUser.getId())
+                            && !UserConstant.ADMIN_ROLE.equals(loginUser.getUserRole());
+                    ThrowUtils.throwIf(noAuth, ErrorCode.NO_AUTH_ERROR, "无权限查看构建进度");
+                    CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(app.getCodeGenType());
+                    ThrowUtils.throwIf(codeGenTypeEnum == null, ErrorCode.SYSTEM_ERROR, "不支持的代码生成类型");
+                    ThrowUtils.throwIf(codeGenTypeEnum != CodeGenTypeEnum.VUE_PROJECT, ErrorCode.PARAMS_ERROR, "当前应用无需构建");
+                    String projectPath = Paths.get(AppConstant.CODE_OUTPUT_ROOT_DIR, "vue_project_" + appId).toString();
+                    return buildProgressService.watch(projectPath);
+                })
+                .map(progress -> {
+                    String jsonData = JSONUtil.toJsonStr(progress);
+                    String eventType = BuildProgressStatusEnum.isFinished(progress.getStatus()) ? "done" : "progress";
+                    return ServerSentEvent.<String>builder()
+                            .event(eventType)
+                            .data(jsonData)
+                            .build();
+                })
+                .onErrorResume(e -> {
+                    int code = ErrorCode.SYSTEM_ERROR.getCode();
+                    String errMsg = e.getMessage();
+                    if (e instanceof BusinessException be) {
+                        code = be.getCode();
+                        errMsg = be.getMessage();
+                    }
+                    if (StrUtil.isBlank(errMsg)) {
+                        errMsg = "系统异常";
+                    }
+                    log.error("SSE /app/build/progress 异常, appId={}, msg={}", appId, errMsg, e);
+                    String jsonData = JSONUtil.toJsonStr(Map.of(
+                            "code", String.valueOf(code),
+                            "message", errMsg
+                    ));
+                    return Flux.just(ServerSentEvent.<String>builder()
+                            .event("error")
+                            .data(jsonData)
+                            .build());
+                });
     }
 
 

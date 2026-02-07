@@ -2,6 +2,8 @@ package com.uloaix.xiaolu_aicode.ai;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import com.uloaix.xiaolu_aicode.ai.guardrail.PromptSafetyInputGuardrail;
+import com.uloaix.xiaolu_aicode.ai.guardrail.RetryOutputGuardrail;
 import com.uloaix.xiaolu_aicode.ai.tools.ToolManager;
 import com.uloaix.xiaolu_aicode.exception.BusinessException;
 import com.uloaix.xiaolu_aicode.exception.ErrorCode;
@@ -119,12 +121,16 @@ public class AiCodeGeneratorServiceFactory {
         // 根据代码生成类型选择不同的模型配置
         return switch (codeGenType) {
             case VUE_PROJECT -> {
+
                 // 使用多例模式的 StreamingChatModel 解决并发问题
                 StreamingChatModel reasoningStreamingChatModel = SpringContextUtil.getBean("reasoningStreamingChatModelPrototype", StreamingChatModel.class);
                 yield AiServices.builder(AiCodeGeneratorService.class)
                         .streamingChatModel(reasoningStreamingChatModel)
                         .chatMemoryProvider(memoryId -> chatMemory)
                         .tools((Object[]) toolManager.getAllTools())
+                        .inputGuardrails(new PromptSafetyInputGuardrail())  // 输入护轨
+                        .outputGuardrails(new RetryOutputGuardrail())// 输出护轨
+                        .maxSequentialToolsInvocations(20) //最多连续调用 20次工具
                         .hallucinatedToolNameStrategy(toolExecutionRequest -> ToolExecutionResultMessage.from(
                                 toolExecutionRequest, "Error: there is no tool called " + toolExecutionRequest.name()
                         ))
@@ -139,6 +145,9 @@ public class AiCodeGeneratorServiceFactory {
                         .chatModel(chatModel)
                         .streamingChatModel(openAiStreamingChatModel)
                         .chatMemory(chatMemory)
+                        .inputGuardrails(new PromptSafetyInputGuardrail())  // 输入护轨
+                        .outputGuardrails(new RetryOutputGuardrail()) // 输出护轨
+                        .maxSequentialToolsInvocations(20) //最多连续调用 20次工具
                         .build();
             }
             default -> throw new BusinessException(ErrorCode.SYSTEM_ERROR,

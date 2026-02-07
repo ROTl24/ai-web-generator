@@ -1,9 +1,11 @@
 package com.uloaix.xiaolu_aicode.core.builder;
 
 import cn.hutool.core.util.RuntimeUtil;
+import com.uloaix.xiaolu_aicode.core.progress.BuildProgressService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import jakarta.annotation.Resource;
 import jakarta.annotation.PreDestroy;
 import java.io.File;
 import java.util.concurrent.CompletableFuture;
@@ -18,6 +20,9 @@ import java.util.concurrent.TimeUnit;
 public class VueProjectBuilder {
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
     private final ConcurrentMap<String, CompletableFuture<Boolean>> buildTaskMap = new ConcurrentHashMap<>();
+
+    @Resource
+    private BuildProgressService buildProgressService;
 
     /**
      * 构建异步项目，不阻塞主流程
@@ -65,36 +70,52 @@ public class VueProjectBuilder {
      * 实际执行构建流程
      */
     private boolean doBuildProject(String projectPath) {
-        File projectDir = new File(projectPath);
-        if (!projectDir.exists() || !projectDir.isDirectory()) {
-            log.error("项目目录不存在: {}", projectPath);
+        buildProgressService.startBuild(projectPath);
+        try {
+            File projectDir = new File(projectPath);
+            if (!projectDir.exists() || !projectDir.isDirectory()) {
+                log.error("项目目录不存在: {}", projectPath);
+                buildProgressService.completeFailed(projectPath, "项目目录不存在，构建失败");
+                return false;
+            }
+            // 检查 package.json 是否存在
+            File packageJson = new File(projectDir, "package.json");
+            if (!packageJson.exists()) {
+                log.error("package.json 文件不存在: {}", packageJson.getAbsolutePath());
+                buildProgressService.completeFailed(projectPath, "package.json 不存在，构建失败");
+                return false;
+            }
+            log.info("开始构建 Vue 项目: {}", projectPath);
+            // 执行 npm install
+            buildProgressService.updateProgress(projectPath, 15, "install", "安装依赖中");
+            if (!executeNpmInstall(projectDir)) {
+                log.error("npm install 执行失败");
+                buildProgressService.completeFailed(projectPath, "安装依赖失败");
+                return false;
+            }
+            // 执行 npm run build
+            buildProgressService.updateProgress(projectPath, 70, "build", "项目构建中");
+            if (!executeNpmBuild(projectDir)) {
+                log.error("npm run build 执行失败");
+                buildProgressService.completeFailed(projectPath, "项目构建失败");
+                return false;
+            }
+            // 验证 dist 目录是否生成
+            buildProgressService.updateProgress(projectPath, 90, "verify", "校验构建产物");
+            File distDir = new File(projectDir, "dist");
+            if (!distDir.exists()) {
+                log.error("构建完成但 dist 目录未生成: {}", distDir.getAbsolutePath());
+                buildProgressService.completeFailed(projectPath, "未生成 dist 目录");
+                return false;
+            }
+            log.info("Vue 项目构建成功，dist 目录: {}", distDir.getAbsolutePath());
+            buildProgressService.completeSuccess(projectPath, "构建完成");
+            return true;
+        } catch (Exception e) {
+            log.error("构建 Vue 项目异常: {}", e.getMessage(), e);
+            buildProgressService.completeFailed(projectPath, "构建异常，请重试");
             return false;
         }
-        // 检查 package.json 是否存在
-        File packageJson = new File(projectDir, "package.json");
-        if (!packageJson.exists()) {
-            log.error("package.json 文件不存在: {}", packageJson.getAbsolutePath());
-            return false;
-        }
-        log.info("开始构建 Vue 项目: {}", projectPath);
-        // 执行 npm install
-        if (!executeNpmInstall(projectDir)) {
-            log.error("npm install 执行失败");
-            return false;
-        }
-        // 执行 npm run build
-        if (!executeNpmBuild(projectDir)) {
-            log.error("npm run build 执行失败");
-            return false;
-        }
-        // 验证 dist 目录是否生成
-        File distDir = new File(projectDir, "dist");
-        if (!distDir.exists()) {
-            log.error("构建完成但 dist 目录未生成: {}", distDir.getAbsolutePath());
-            return false;
-        }
-        log.info("Vue 项目构建成功，dist 目录: {}", distDir.getAbsolutePath());
-        return true;
     }
 
 
@@ -102,7 +123,16 @@ public class VueProjectBuilder {
      * 执行 npm install 命令
      */
     private boolean executeNpmInstall(File projectDir) {
+        // 优化策略1：如果 node_modules 已存在，直接跳过安装
+        // 这对于“修改提示词重新生成”的场景非常有效，能将时间从几分钟缩短到几秒
+        File nodeModules = new File(projectDir, "node_modules");
+        if (nodeModules.exists() && nodeModules.isDirectory()) {
+            log.info("检测到 node_modules 已存在，跳过 npm install 以加速构建");
+            return true;
+        }
+
         log.info("执行 npm install...");
+        // 优化策略2：建议在服务器安装 pnpm，并将此处改为 pnpm install，速度可提升 3-5 倍
         String command = String.format("%s install", buildCommand("npm"));
         return executeCommand(projectDir, command, 300); // 5分钟超时
     }
