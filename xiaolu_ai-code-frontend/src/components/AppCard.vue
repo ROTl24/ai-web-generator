@@ -64,26 +64,31 @@ const handleViewWork = () => {
 
 <style scoped>
 .app-card {
-  background: rgba(255, 255, 255, 0.95);
+  background: #ffffff;
   border-radius: 16px;
   overflow: hidden;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  transition:
-    transform 0.3s,
-    box-shadow 0.3s;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+  border: 1px solid #f0f0f0;
+  transition: all 0.3s ease;
   cursor: pointer;
 }
 
 .app-card:hover {
-  transform: translateY(-8px);
-  box-shadow: 0 15px 50px rgba(0, 0, 0, 0.25);
+  transform: translateY(-4px);
+  box-shadow:
+    0 12px 32px rgba(249, 115, 22, 0.1),
+    0 4px 12px rgba(0, 0, 0, 0.06);
+  border-color: rgba(249, 115, 22, 0.15);
+}
+
+/* 精选卡片微调 */
+.app-card--featured {
+  border-color: rgba(249, 115, 22, 0.1);
 }
 
 .app-preview {
   height: 180px;
-  background: #f5f5f5;
+  background: #fafafa;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -95,11 +100,16 @@ const handleViewWork = () => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: transform 0.4s ease;
+}
+
+.app-card:hover .app-preview img {
+  transform: scale(1.03);
 }
 
 .app-placeholder {
   font-size: 48px;
-  color: #d9d9d9;
+  color: #e5e7eb;
 }
 
 .app-overlay {
@@ -108,27 +118,56 @@ const handleViewWork = () => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(124, 45, 18, 0.6);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
   opacity: 0;
-  transition: opacity 0.3s;
+  transition: opacity 0.3s ease;
 }
 
 .app-card:hover .app-overlay {
   opacity: 1;
 }
 
+.app-overlay :deep(.ant-btn-primary) {
+  background: #ea580c;
+  border-color: #ea580c;
+  border-radius: 8px;
+}
+
+.app-overlay :deep(.ant-btn-primary:hover) {
+  background: #c2410c;
+  border-color: #c2410c;
+}
+
+.app-overlay :deep(.ant-btn-default) {
+  background: rgba(255, 255, 255, 0.95);
+  border-color: transparent;
+  color: #374151;
+  border-radius: 8px;
+}
+
+.app-overlay :deep(.ant-btn-default:hover) {
+  color: #ea580c;
+  border-color: #ea580c;
+}
+
 .app-info {
-  padding: 16px;
+  padding: 14px 16px;
   display: flex;
   align-items: center;
   gap: 12px;
+  border-top: 1px solid #f5f5f5;
 }
 
 .app-info-left {
   flex-shrink: 0;
+}
+
+.app-info-left :deep(.ant-avatar) {
+  border: 2px solid #ffedd5;
 }
 
 .app-info-right {
@@ -144,10 +183,10 @@ const handleViewWork = () => {
 }
 
 .app-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
-  margin: 0 0 4px;
-  color: #1a1a1a;
+  margin: 0 0 3px;
+  color: #1c1917;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -156,11 +195,13 @@ const handleViewWork = () => {
 .status-tag {
   margin: 0;
   flex-shrink: 0;
+  border-radius: 6px;
+  font-size: 12px;
 }
 
 .app-author {
-  font-size: 14px;
-  color: #666;
+  font-size: 13px;
+  color: #9ca3af;
   margin: 0;
   white-space: nowrap;
   overflow: hidden;
