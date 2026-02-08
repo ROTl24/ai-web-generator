@@ -6,17 +6,17 @@ import cn.hutool.json.JSONUtil;
 import com.uloaix.xiaolu_aicode.ai.model.message.*;
 import com.uloaix.xiaolu_aicode.ai.tools.BaseTool;
 import com.uloaix.xiaolu_aicode.ai.tools.ToolManager;
-import com.uloaix.xiaolu_aicode.constant.AppConstant;
 import com.uloaix.xiaolu_aicode.core.builder.VueProjectBuilder;
 import com.uloaix.xiaolu_aicode.model.entity.User;
 import com.uloaix.xiaolu_aicode.model.enums.ChatHistoryMessageTypeEnum;
+import com.uloaix.xiaolu_aicode.model.enums.CodeGenTypeEnum;
+import com.uloaix.xiaolu_aicode.service.AppVersionService;
 import com.uloaix.xiaolu_aicode.service.ChatHistoryService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
-import java.nio.file.Paths;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -32,6 +32,9 @@ public class JsonMessageStreamHandler {
 
     @Resource
     private ToolManager toolManager;
+
+    @Resource
+    private AppVersionService appVersionService;
     /**
      * 处理 TokenStream（VUE_PROJECT）
      * 解析 JSON 消息并重组为完整的响应格式
@@ -61,8 +64,10 @@ public class JsonMessageStreamHandler {
                     try {
                         String aiResponse = chatHistoryStringBuilder.toString();
                         chatHistoryService.addChatMessage(appId, aiResponse, ChatHistoryMessageTypeEnum.AI.getValue(), loginUser.getId());
-                        String projectPath = Paths.get(AppConstant.CODE_OUTPUT_ROOT_DIR, "vue_project_" + appId).toString();
+                        String projectPath = appVersionService.resolveActiveVersionDir(CodeGenTypeEnum.VUE_PROJECT, appId);
                         vueProjectBuilder.buildProjectAsync(projectPath);
+                        int version = appVersionService.resolveActiveVersion(appId);
+                        appVersionService.markVersionReady(appId, version);
                     } catch (Exception e) {
                         log.error("流式完成回调失败（已忽略），appId={}", appId, e);
                     }
@@ -72,6 +77,8 @@ public class JsonMessageStreamHandler {
                     try {
                         String errorMessage = "AI回复失败: " + error.getMessage();
                         chatHistoryService.addChatMessage(appId, errorMessage, ChatHistoryMessageTypeEnum.AI.getValue(), loginUser.getId());
+                        int version = appVersionService.resolveActiveVersion(appId);
+                        appVersionService.markVersionFailed(appId, version, errorMessage);
                     } catch (Exception e) {
                         log.error("流式错误回调失败（已忽略），appId={}", appId, e);
                     }

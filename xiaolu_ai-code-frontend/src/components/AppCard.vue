@@ -19,7 +19,12 @@
         </a-avatar>
       </div>
       <div class="app-info-right">
-        <h3 class="app-title">{{ app.appName || '未命名应用' }}</h3>
+        <div class="app-title-row">
+          <h3 class="app-title">{{ app.appName || '未命名应用' }}</h3>
+          <a-tag :color="getAppGenStatusMeta(app.genStatus).color" class="status-tag">
+            {{ getAppGenStatusMeta(app.genStatus).label }}
+          </a-tag>
+        </div>
         <p class="app-author">
           {{ app.user?.userName || (featured ? '官方' : '未知用户') }}
         </p>
@@ -30,6 +35,7 @@
 
 <script setup lang="ts">
 import { normalizeAssetUrl } from '@/utils/url'
+import { getAppGenStatusMeta } from '@/utils/appGenStatus'
 
 interface Props {
   app: API.AppVO
@@ -130,6 +136,13 @@ const handleViewWork = () => {
   min-width: 0;
 }
 
+.app-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
 .app-title {
   font-size: 16px;
   font-weight: 600;
@@ -138,6 +151,11 @@ const handleViewWork = () => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.status-tag {
+  margin: 0;
+  flex-shrink: 0;
 }
 
 .app-author {

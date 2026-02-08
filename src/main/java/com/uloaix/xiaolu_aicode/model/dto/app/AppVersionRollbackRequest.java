@@ -5,10 +5,10 @@ import lombok.Data;
 import java.io.Serializable;
 
 /**
- * 应用部署请求类
+ * 应用版本回滚请求
  */
 @Data
-public class AppDeployRequest implements Serializable {
+public class AppVersionRollbackRequest implements Serializable {
 
     /**
      * 应用 id
@@ -16,7 +16,7 @@ public class AppDeployRequest implements Serializable {
     private Long appId;
 
     /**
-     * 目标版本号（为空则使用当前版本）
+     * 目标版本号
      */
     private Integer version;
 

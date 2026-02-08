@@ -4,6 +4,8 @@ import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONObject;
 import com.uloaix.xiaolu_aicode.constant.AppConstant;
+import com.uloaix.xiaolu_aicode.model.enums.CodeGenTypeEnum;
+import com.uloaix.xiaolu_aicode.service.AppVersionService;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.agent.tool.ToolMemoryId;
@@ -23,6 +25,9 @@ import java.util.Set;
 @Slf4j
 @Component
 public class FileDirReadTool extends BaseTool {
+
+    @jakarta.annotation.Resource
+    private AppVersionService appVersionService;
 
     /**
      * 需要忽略的文件和目录
@@ -46,15 +51,20 @@ public class FileDirReadTool extends BaseTool {
             @ToolMemoryId Long appId
     ) {
         try {
-            Path path = Paths.get(relativeDirPath == null ? "" : relativeDirPath);
+            String normalizedPath = normalizeRelativePath(relativeDirPath);
+            Path path = Paths.get(normalizedPath);
             if (!path.isAbsolute()) {
-                String projectDirName = "vue_project_" + appId;
-                Path projectRoot = Paths.get(AppConstant.CODE_OUTPUT_ROOT_DIR, projectDirName);
-                path = projectRoot.resolve(relativeDirPath == null ? "" : relativeDirPath);
+                String projectRootDir = appVersionService.resolveActiveVersionDir(CodeGenTypeEnum.VUE_PROJECT, appId);
+                if (projectRootDir == null) {
+                    String projectDirName = "vue_project_" + appId;
+                    projectRootDir = Paths.get(AppConstant.CODE_OUTPUT_ROOT_DIR, projectDirName).toString();
+                }
+                Path projectRoot = Paths.get(projectRootDir);
+                path = projectRoot.resolve(normalizedPath);
             }
             File targetDir = path.toFile();
             if (!targetDir.exists() || !targetDir.isDirectory()) {
-                return "错误：目录不存在或不是目录 - " + relativeDirPath;
+                return "错误：目录不存在或不是目录 - " + (normalizedPath.isEmpty() ? "根目录" : normalizedPath);
             }
             StringBuilder structure = new StringBuilder();
             structure.append("项目目录结构:\n");
@@ -106,9 +116,10 @@ public class FileDirReadTool extends BaseTool {
     @Override
     public String generateToolExecutedResult(JSONObject arguments) {
         String relativeDirPath = arguments.getStr("relativeDirPath");
-        if (StrUtil.isEmpty(relativeDirPath)) {
-            relativeDirPath = "根目录";
+        String normalizedPath = normalizeRelativePath(relativeDirPath);
+        if (StrUtil.isEmpty(normalizedPath)) {
+            normalizedPath = "根目录";
         }
-        return String.format(" [⚒️工具调用] %s %s", getDisplayName(), relativeDirPath);
+        return String.format(" [⚒️工具调用] %s %s", getDisplayName(), normalizedPath);
     }
 }

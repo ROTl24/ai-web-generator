@@ -7,6 +7,9 @@
         <a-tag v-if="appInfo?.codeGenType" color="blue" class="code-gen-type-tag">
           {{ formatCodeGenType(appInfo.codeGenType) }}
         </a-tag>
+        <a-tag v-if="appInfo" :color="getAppGenStatusMeta(appInfo?.genStatus).color" class="gen-status-tag">
+          {{ getAppGenStatusMeta(appInfo?.genStatus).label }}
+        </a-tag>
       </div>
       <div class="header-right">
         <a-button type="default" @click="showAppDetail">
@@ -244,6 +247,7 @@ import DeploySuccessModal from '@/components/DeploySuccessModal.vue'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
 import { API_BASE_URL, getStaticPreviewUrl } from '@/config/env'
 import { VisualEditor, type ElementInfo } from '@/utils/visualEditor'
+import { AppGenStatusEnum, getAppGenStatusMeta } from '@/utils/appGenStatus'
 
 import {
   CloudUploadOutlined,
@@ -803,6 +807,9 @@ const generateCode = async (userMessage: string, aiMessageIndex: number) => {
   let rawContent = ''
 
   try {
+    if (appInfo.value) {
+      appInfo.value.genStatus = AppGenStatusEnum.GENERATING
+    }
     // 获取 axios 配置的 baseURL
     const baseURL = request.defaults.baseURL || API_BASE_URL
 
@@ -930,6 +937,9 @@ const handleError = (error: unknown, aiMessageIndex: number) => {
   messages.value[aiMessageIndex].loading = false
   message.error('生成失败，请重试')
   isGenerating.value = false
+  if (appInfo.value) {
+    appInfo.value.genStatus = AppGenStatusEnum.FAILED
+  }
 }
 
 // 更新预览
@@ -1134,6 +1144,10 @@ onUnmounted(() => {
 }
 
 .code-gen-type-tag {
+  font-size: 12px;
+}
+
+.gen-status-tag {
   font-size: 12px;
 }
 

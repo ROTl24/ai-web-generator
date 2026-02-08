@@ -62,10 +62,11 @@ public interface AppService extends IService<App> {
     /**
      * 部署应用
      * @param appId 应用id
+     * @param version 版本号（为空则使用当前版本）
      * @param loginUser 登录用户
      * @return 可访问的部署地址
      */
-    String deployApp(Long appId, User loginUser);
+    String deployApp(Long appId, Integer version, User loginUser);
 
     /**
      * 异步生成应用截图并更新封面

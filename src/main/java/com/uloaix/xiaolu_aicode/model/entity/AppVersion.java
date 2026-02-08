@@ -15,16 +15,14 @@ import java.io.Serializable;
 import java.time.LocalDateTime;
 
 /**
- * 应用 实体类。
- *
- * @author <a href="https://github.com/ROTl24">程序员小陆</a>
+ * 应用版本 实体类。
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Table("app")
-public class App implements Serializable {
+@Table("app_version")
+public class AppVersion implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -32,25 +30,19 @@ public class App implements Serializable {
     /**
      * id
      */
-    @Id(keyType = KeyType.Generator,value = KeyGenerators.snowFlakeId)
+    @Id(keyType = KeyType.Generator, value = KeyGenerators.snowFlakeId)
     private Long id;
 
     /**
-     * 应用名称
+     * 应用id
      */
-    @Column("appName")
-    private String appName;
+    @Column("appId")
+    private Long appId;
 
     /**
-     * 应用封面
+     * 版本号
      */
-    private String cover;
-
-    /**
-     * 应用初始化的 prompt
-     */
-    @Column("initPrompt")
-    private String initPrompt;
+    private Integer version;
 
     /**
      * 代码生成类型（枚举）
@@ -59,45 +51,27 @@ public class App implements Serializable {
     private String codeGenType;
 
     /**
-     * 部署标识
+     * 版本代码目录
      */
-    @Column("deployKey")
-    private String deployKey;
+    @Column("codeDir")
+    private String codeDir;
 
     /**
-     * 部署时间
+     * 版本状态：generating/ready/failed
      */
-    @Column("deployedTime")
-    private LocalDateTime deployedTime;
+    private String status;
 
     /**
-     * 当前版本号
+     * 版本快照截图URL
      */
-    @Column("currentVersion")
-    private Integer currentVersion;
-
-    /**
-     * 生成状态（未生成/生成中/已完成/失败）
-     */
-    @Column("genStatus")
-    private String genStatus;
-
-    /**
-     * 优先级
-     */
-    private Integer priority;
+    @Column("snapshotUrl")
+    private String snapshotUrl;
 
     /**
      * 创建用户id
      */
-    @Column("userId")
-    private Long userId;
-
-    /**
-     * 编辑时间
-     */
-    @Column("editTime")
-    private LocalDateTime editTime;
+    @Column("createdBy")
+    private Long createdBy;
 
     /**
      * 创建时间
@@ -116,5 +90,4 @@ public class App implements Serializable {
      */
     @Column(value = "isDelete", isLogicDelete = true)
     private Integer isDelete;
-
 }

@@ -41,6 +41,8 @@ create table app
     codeGenType  varchar(64)                        null comment '代码生成类型（枚举）',
     deployKey    varchar(64)                        null comment '部署标识',
     deployedTime datetime                           null comment '部署时间',
+    currentVersion int   default 0                 not null comment '当前版本号',
+    genStatus    varchar(32) default 'not_generated' not null comment '生成状态：not_generated/generating/ready/failed',
     priority     int      default 0                 not null comment '优先级',
     userId       bigint                             not null comment '创建用户id',
     editTime     datetime default CURRENT_TIMESTAMP not null comment '编辑时间',
@@ -51,6 +53,25 @@ create table app
     INDEX idx_appName (appName),         -- 提升基于应用名称的查询性能
     INDEX idx_userId (userId)            -- 提升基于用户 ID 的查询性能
 ) comment '应用' collate = utf8mb4_unicode_ci;
+
+
+-- 应用版本表
+create table app_version
+(
+    id           bigint auto_increment comment 'id' primary key,
+    appId        bigint                             not null comment '应用id',
+    version      int                                not null comment '版本号',
+    codeGenType  varchar(64)                        null comment '代码生成类型（枚举）',
+    codeDir      varchar(512)                       null comment '版本代码目录',
+    status       varchar(32)                        not null comment '版本状态：generating/ready/failed',
+    snapshotUrl  varchar(1024)                      null comment '版本快照截图URL',
+    createdBy    bigint                             not null comment '创建用户id',
+    createTime   datetime default CURRENT_TIMESTAMP not null comment '创建时间',
+    updateTime   datetime default CURRENT_TIMESTAMP not null on update CURRENT_TIMESTAMP comment '更新时间',
+    isDelete     tinyint  default 0                 not null comment '是否删除',
+    UNIQUE KEY uk_app_version (appId, version),
+    INDEX idx_appId (appId)
+) comment '应用版本' collate = utf8mb4_unicode_ci;
 
 
 
@@ -70,3 +91,10 @@ create table chat_history
     INDEX idx_createTime (createTime),             -- 提升基于时间的查询性能
     INDEX idx_appId_createTime (appId, createTime) -- 游标查询核心索引
 ) comment '对话历史' collate = utf8mb4_unicode_ci;
+
+
+ALTER TABLE app
+    ADD COLUMN currentVersion int DEFAULT 0 NOT NULL COMMENT '当前版本号';
+
+ALTER TABLE app
+    ADD COLUMN genStatus varchar(32) DEFAULT 'not_generated' NOT NULL COMMENT '生成状态：not_generated/generating/ready/failed';

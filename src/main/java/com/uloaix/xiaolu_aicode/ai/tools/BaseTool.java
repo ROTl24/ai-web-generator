@@ -32,6 +32,34 @@ public abstract class BaseTool {
     }
 
     /**
+     * 规范化工具输入路径，避免出现以 "/" 开头导致的绝对路径误判。
+     * 仅保留 Windows 盘符绝对路径，其它情况按相对路径处理。
+     */
+    protected String normalizeRelativePath(String path) {
+        if (path == null) {
+            return "";
+        }
+        String trimmed = path.trim();
+        if (trimmed.isEmpty()) {
+            return "";
+        }
+        if (hasWindowsDrivePrefix(trimmed)) {
+            return trimmed;
+        }
+        String normalized = trimmed.replace("\\", "/");
+        normalized = normalized.replaceFirst("^\\./", "");
+        normalized = normalized.replaceFirst("^/+", "");
+        return normalized;
+    }
+
+    /**
+     * 判断是否为 Windows 盘符绝对路径（如 C:\path 或 D:/path）。
+     */
+    protected boolean hasWindowsDrivePrefix(String path) {
+        return path != null && path.matches("^[a-zA-Z]:[\\\\/].*");
+    }
+
+    /**
      * 生成工具执行结果格式（保存到数据库）
      *
      * @param arguments 工具执行参数

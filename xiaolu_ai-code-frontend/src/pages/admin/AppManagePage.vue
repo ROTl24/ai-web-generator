@@ -24,6 +24,22 @@
           </a-select-option>
         </a-select>
       </a-form-item>
+      <a-form-item label="生成状态">
+        <a-select
+          v-model:value="searchParams.genStatus"
+          placeholder="选择生成状态"
+          style="width: 150px"
+        >
+          <a-select-option value="">全部</a-select-option>
+          <a-select-option
+            v-for="option in APP_GEN_STATUS_OPTIONS"
+            :key="option.value"
+            :value="option.value"
+          >
+            {{ option.label }}
+          </a-select-option>
+        </a-select>
+      </a-form-item>
       <a-form-item>
         <a-button type="primary" html-type="submit">搜索</a-button>
       </a-form-item>
@@ -55,6 +71,11 @@
         </template>
         <template v-else-if="column.dataIndex === 'codeGenType'">
           {{ formatCodeGenType(record.codeGenType) }}
+        </template>
+        <template v-else-if="column.dataIndex === 'genStatus'">
+          <a-tag :color="getAppGenStatusMeta(record.genStatus).color">
+            {{ getAppGenStatusMeta(record.genStatus).label }}
+          </a-tag>
         </template>
         <template v-else-if="column.dataIndex === 'priority'">
           <a-tag v-if="record.priority === 99" color="gold">精选</a-tag>
@@ -99,6 +120,7 @@ import { useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { listAppVoByPageByAdmin, deleteAppByAdmin, updateAppByAdmin } from '@/api/appController'
 import { CODE_GEN_TYPE_OPTIONS, formatCodeGenType } from '@/utils/codeGenTypes'
+import { APP_GEN_STATUS_OPTIONS, getAppGenStatusMeta } from '@/utils/appGenStatus'
 import { formatTime } from '@/utils/time'
 import { normalizeAssetUrl } from '@/utils/url'
 import UserInfo from '@/components/UserInfo.vue'
@@ -130,6 +152,11 @@ const columns = [
   {
     title: '生成类型',
     dataIndex: 'codeGenType',
+    width: 100,
+  },
+  {
+    title: '生成状态',
+    dataIndex: 'genStatus',
     width: 100,
   },
   {

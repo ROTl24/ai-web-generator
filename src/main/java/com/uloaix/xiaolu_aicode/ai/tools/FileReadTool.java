@@ -2,6 +2,8 @@ package com.uloaix.xiaolu_aicode.ai.tools;
 
 import cn.hutool.json.JSONObject;
 import com.uloaix.xiaolu_aicode.constant.AppConstant;
+import com.uloaix.xiaolu_aicode.model.enums.CodeGenTypeEnum;
+import com.uloaix.xiaolu_aicode.service.AppVersionService;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.agent.tool.ToolMemoryId;
@@ -21,6 +23,9 @@ import java.nio.file.Paths;
 @Component
 public class FileReadTool extends BaseTool{
 
+    @jakarta.annotation.Resource
+    private AppVersionService appVersionService;
+
     @Tool("读取指定路径的文件内容")
     public String readFile(
             @P("文件的相对路径")
@@ -28,14 +33,22 @@ public class FileReadTool extends BaseTool{
             @ToolMemoryId Long appId
     ) {
         try {
-            Path path = Paths.get(relativeFilePath);
+            String normalizedPath = normalizeRelativePath(relativeFilePath);
+            if (normalizedPath.isEmpty()) {
+                return "错误：文件路径为空";
+            }
+            Path path = Paths.get(normalizedPath);
             if (!path.isAbsolute()) {
-                String projectDirName = "vue_project_" + appId;
-                Path projectRoot = Paths.get(AppConstant.CODE_OUTPUT_ROOT_DIR, projectDirName);
-                path = projectRoot.resolve(relativeFilePath);
+                String projectRootDir = appVersionService.resolveActiveVersionDir(CodeGenTypeEnum.VUE_PROJECT, appId);
+                if (projectRootDir == null) {
+                    String projectDirName = "vue_project_" + appId;
+                    projectRootDir = Paths.get(AppConstant.CODE_OUTPUT_ROOT_DIR, projectDirName).toString();
+                }
+                Path projectRoot = Paths.get(projectRootDir);
+                path = projectRoot.resolve(normalizedPath);
             }
             if (!Files.exists(path) || !Files.isRegularFile(path)) {
-                return "错误：文件不存在或不是文件 - " + relativeFilePath;
+                return "错误：文件不存在或不是文件 - " + normalizedPath;
             }
             return Files.readString(path);
         } catch (IOException e) {
@@ -58,7 +71,9 @@ public class FileReadTool extends BaseTool{
     @Override
     public String generateToolExecutedResult(JSONObject arguments) {
         String relativeFilePath = arguments.getStr("relativeFilePath");
-        return String.format("[⚒️工具调用] %s %s", getDisplayName(), relativeFilePath);
+        String normalizedPath = normalizeRelativePath(relativeFilePath);
+        return String.format("[⚒️工具调用] %s %s", getDisplayName(),
+                normalizedPath.isEmpty() ? relativeFilePath : normalizedPath);
     }
 }
 

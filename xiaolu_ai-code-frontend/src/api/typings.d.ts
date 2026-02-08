@@ -25,6 +25,7 @@ declare namespace API {
     initPrompt?: string
     codeGenType?: string
     deployKey?: string
+    genStatus?: string
     priority?: number
     userId?: number
   }
@@ -42,6 +43,7 @@ declare namespace API {
     codeGenType?: string
     deployKey?: string
     deployedTime?: string
+    genStatus?: string
     priority?: number
     userId?: number
     createTime?: string

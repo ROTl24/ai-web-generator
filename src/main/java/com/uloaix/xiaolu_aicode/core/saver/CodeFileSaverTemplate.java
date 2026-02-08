@@ -6,6 +6,9 @@ import com.uloaix.xiaolu_aicode.constant.AppConstant;
 import com.uloaix.xiaolu_aicode.exception.BusinessException;
 import com.uloaix.xiaolu_aicode.exception.ErrorCode;
 import com.uloaix.xiaolu_aicode.model.enums.CodeGenTypeEnum;
+import com.uloaix.xiaolu_aicode.service.AppVersionService;
+import com.uloaix.xiaolu_aicode.utils.AppVersionPathUtils;
+import com.uloaix.xiaolu_aicode.utils.SpringContextUtil;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
@@ -60,11 +63,22 @@ public abstract class CodeFileSaverTemplate<T> {
         if (appId == null) {
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "应用id不能为空");
         }
-        String codeType = getCodeType().getValue();
-        String uniqueDirName = StrUtil.format("{}_{}", codeType,appId);
-        String dirPath = FILE_SAVE_ROOT_DIR + File.separator + uniqueDirName;
+        int version = resolveActiveVersion(appId);
+        String dirPath = AppVersionPathUtils.buildVersionDir(getCodeType(), appId, version);
         FileUtil.mkdir(dirPath);
         return dirPath;
+    }
+
+    private int resolveActiveVersion(Long appId) {
+        try {
+            AppVersionService appVersionService = SpringContextUtil.getBean(AppVersionService.class);
+            if (appVersionService != null) {
+                int version = appVersionService.resolveActiveVersion(appId);
+                return Math.max(version, 0);
+            }
+        } catch (Exception ignored) {
+        }
+        return 0;
     }
 
     /**

@@ -5,6 +5,8 @@ import cn.hutool.json.JSONObject;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.uloaix.xiaolu_aicode.constant.AppConstant;
+import com.uloaix.xiaolu_aicode.model.enums.CodeGenTypeEnum;
+import com.uloaix.xiaolu_aicode.service.AppVersionService;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.agent.tool.ToolMemoryId;
@@ -32,12 +34,15 @@ import java.util.stream.Collectors;
 @Component
 public class FileWriteTool extends BaseTool {
 
+    @jakarta.annotation.Resource
+    private AppVersionService appVersionService;
+
     /**
      * 每个 appId 对应一组已写入的文件路径（标准化后）。
      * <p>
      * 缓存策略：写入后 30 分钟 / 最后访问后 10 分钟自动过期，避免内存泄漏。
      */
-    private final Cache<Long, Set<String>> writtenFilesTracker = Caffeine.newBuilder()
+    private final Cache<String, Set<String>> writtenFilesTracker = Caffeine.newBuilder()
             .maximumSize(1000)
             .expireAfterWrite(Duration.ofMinutes(30))
             .expireAfterAccess(Duration.ofMinutes(10))
@@ -52,30 +57,39 @@ public class FileWriteTool extends BaseTool {
             @ToolMemoryId Long appId
     ) {
         // 标准化路径用于去重比较
-        String normalizedPath = normalizePath(relativeFilePath);
+        String normalizedPath = normalizeRelativePath(relativeFilePath);
+        if (normalizedPath.isEmpty()) {
+            return "错误：文件路径为空";
+        }
 
-        // 获取或创建当前 appId 的已写入文件集合
-        Set<String> writtenFiles = writtenFilesTracker.get(appId, k -> ConcurrentHashMap.newKeySet());
+        int activeVersion = appVersionService.resolveActiveVersion(appId);
+        String trackerKey = buildTrackerKey(appId, activeVersion);
+        // 获取或创建当前 appId + 版本 的已写入文件集合
+        Set<String> writtenFiles = writtenFilesTracker.get(trackerKey, k -> ConcurrentHashMap.newKeySet());
 
         // ============ 重复写入拦截 ============
         if (writtenFiles.contains(normalizedPath)) {
-            log.warn("拦截重复写入文件: {} (appId: {}), 已写入文件数: {}", relativeFilePath, appId, writtenFiles.size());
+            log.warn("拦截重复写入文件: {} (appId: {}, version: {}), 已写入文件数: {}", relativeFilePath, appId, activeVersion, writtenFiles.size());
             String fileList = writtenFiles.stream().sorted().collect(Collectors.joining(", "));
             return String.format(
                     "⚠️ 文件 [%s] 已在本次会话中写入过，重复写入已被拦截。" +
-                    "已写入的全部文件列表: [%s]（共 %d 个）。" +
+                    "已写入的全部文件列表: [%s]（共 %d 个，version=%d）。" +
                     "请不要再次写入已有的文件，继续创建其他尚未写入的文件；如果所有文件均已完成，请直接输出生成完毕提示。",
-                    relativeFilePath, fileList, writtenFiles.size()
+                    relativeFilePath, fileList, writtenFiles.size(), activeVersion
             );
         }
 
         try {
-            Path path = Paths.get(relativeFilePath);
+            Path path = Paths.get(normalizedPath);
             if (!path.isAbsolute()) {
-                // 相对路径处理，创建基于 appId 的项目目录
-                String projectDirName = "vue_project_" + appId;
-                Path projectRoot = Paths.get(AppConstant.CODE_OUTPUT_ROOT_DIR, projectDirName);
-                path = projectRoot.resolve(relativeFilePath);
+                // 相对路径处理，基于 appId + 版本的项目目录
+                String projectRootDir = appVersionService.resolveActiveVersionDir(CodeGenTypeEnum.VUE_PROJECT, appId);
+                if (projectRootDir == null) {
+                    String projectDirName = "vue_project_" + appId;
+                    projectRootDir = Paths.get(AppConstant.CODE_OUTPUT_ROOT_DIR, projectDirName).toString();
+                }
+                Path projectRoot = Paths.get(projectRootDir);
+                path = projectRoot.resolve(normalizedPath);
             }
             // 创建父目录（如果不存在）
             Path parentDir = path.getParent();
@@ -90,11 +104,11 @@ public class FileWriteTool extends BaseTool {
             // 记录已写入文件
             writtenFiles.add(normalizedPath);
 
-            log.info("成功写入文件: {} (appId: {}, 已写入 {} 个文件)", path.toAbsolutePath(), appId, writtenFiles.size());
+            log.info("成功写入文件: {} (appId: {}, version: {}, 已写入 {} 个文件)", path.toAbsolutePath(), appId, activeVersion, writtenFiles.size());
             // 返回写入成功信息 + 已写入文件清单，为 AI 提供外部记忆
             String fileList = writtenFiles.stream().sorted().collect(Collectors.joining(", "));
-            return String.format("文件写入成功: %s（本次已写入 %d 个文件: [%s]）",
-                    relativeFilePath, writtenFiles.size(), fileList);
+            return String.format("文件写入成功: %s（本次已写入 %d 个文件: [%s]，version=%d）",
+                    normalizedPath, writtenFiles.size(), fileList, activeVersion);
         } catch (IOException e) {
             String errorMessage = "文件写入失败: " + relativeFilePath + ", 错误: " + e.getMessage();
             log.error(errorMessage, e);
@@ -110,8 +124,13 @@ public class FileWriteTool extends BaseTool {
      * @param appId 应用 ID
      */
     public void clearWrittenFiles(Long appId) {
-        writtenFilesTracker.invalidate(appId);
-        log.info("已清除 appId={} 的文件写入记录", appId);
+        if (appId == null || appId <= 0) {
+            return;
+        }
+        int activeVersion = appVersionService.resolveActiveVersion(appId);
+        String trackerKey = buildTrackerKey(appId, activeVersion);
+        writtenFilesTracker.invalidate(trackerKey);
+        log.info("已清除 appId={} version={} 的文件写入记录", appId, activeVersion);
     }
 
     /**
@@ -121,7 +140,12 @@ public class FileWriteTool extends BaseTool {
      * @return 已写入文件路径集合，若无记录则返回空集合
      */
     public Set<String> getWrittenFiles(Long appId) {
-        Set<String> files = writtenFilesTracker.getIfPresent(appId);
+        if (appId == null || appId <= 0) {
+            return Set.of();
+        }
+        int activeVersion = appVersionService.resolveActiveVersion(appId);
+        String trackerKey = buildTrackerKey(appId, activeVersion);
+        Set<String> files = writtenFilesTracker.getIfPresent(trackerKey);
         return files != null ? Set.copyOf(files) : Set.of();
     }
 
@@ -131,10 +155,11 @@ public class FileWriteTool extends BaseTool {
      * 例如 "./index.html"、"index.html"、".\index.html" 统一为 "index.html"
      */
     private String normalizePath(String path) {
-        if (path == null) return "";
-        return path.replace("\\", "/")
-                .replaceFirst("^\\./", "")
-                .trim();
+        return normalizeRelativePath(path);
+    }
+
+    private String buildTrackerKey(Long appId, int version) {
+        return appId + ":" + Math.max(version, 0);
     }
 
     @Override
@@ -152,12 +177,15 @@ public class FileWriteTool extends BaseTool {
         String relativeFilePath = arguments.getStr("relativeFilePath");
         String suffix = FileUtil.getSuffix(relativeFilePath);
         String content = arguments.getStr("content");
+        String normalizedPath = normalizeRelativePath(relativeFilePath);
         return String.format("""
                         [⚒️工具调用] %s %s
                         ```%s
                         %s
                         ```
-                        """, getDisplayName(), relativeFilePath, suffix, content);
+                        """, getDisplayName(),
+                normalizedPath.isEmpty() ? relativeFilePath : normalizedPath,
+                suffix, content);
     }
 }
 

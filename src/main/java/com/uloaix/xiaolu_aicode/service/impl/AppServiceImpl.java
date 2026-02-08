@@ -23,11 +23,13 @@ import com.uloaix.xiaolu_aicode.model.entity.App;
 import com.uloaix.xiaolu_aicode.model.entity.User;
 import com.uloaix.xiaolu_aicode.model.enums.ChatHistoryMessageTypeEnum;
 import com.uloaix.xiaolu_aicode.model.enums.CodeGenTypeEnum;
+import com.uloaix.xiaolu_aicode.model.enums.AppGenStatusEnum;
 import com.uloaix.xiaolu_aicode.model.vo.AppVO;
 import com.uloaix.xiaolu_aicode.model.vo.UserVO;
 import com.uloaix.xiaolu_aicode.ratelimiter.annotation.RateLimit;
 import com.uloaix.xiaolu_aicode.ratelimiter.enums.RateLimitType;
 import com.uloaix.xiaolu_aicode.service.AppService;
+import com.uloaix.xiaolu_aicode.service.AppVersionService;
 import com.uloaix.xiaolu_aicode.service.ChatHistoryService;
 import com.uloaix.xiaolu_aicode.service.UserService;
 import jakarta.annotation.Resource;
@@ -76,6 +78,9 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
     @Resource
     private AiCodeGenTypeRoutingServiceFactory aiCodeGenTypeRoutingServiceFactory;
 
+    @Resource
+    private AppVersionService appVersionService;
+
 
 
     @Override
@@ -93,6 +98,10 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         // 应用名称暂时为 initPrompt 前 12 位
         app.setAppName(initPrompt.substring(0, Math.min(initPrompt.length(), 12)));
         app.setCodeGenType(selectedCodeGenType.getValue());
+        // 初始化版本号（未生成代码前为 0）
+        app.setCurrentVersion(0);
+        // 初始化生成状态
+        app.setGenStatus(AppGenStatusEnum.NOT_GENERATED.getValue());
         // 插入数据库
         boolean result = this.save(app);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
@@ -125,6 +134,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         String initPrompt = appQueryRequest.getInitPrompt();
         String codeGenType = appQueryRequest.getCodeGenType();
         String deployKey = appQueryRequest.getDeployKey();
+        String genStatus = appQueryRequest.getGenStatus();
         Integer priority = appQueryRequest.getPriority();
         Long userId = appQueryRequest.getUserId();
         String sortField = appQueryRequest.getSortField();
@@ -136,6 +146,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
                 .like("initPrompt", initPrompt)
                 .eq("codeGenType", codeGenType)
                 .eq("deployKey", deployKey)
+                .eq("genStatus", genStatus)
                 .eq("priority", priority)
                 .eq("userId", userId)
                 .orderBy(sortField, "ascend".equals(sortOrder));
@@ -206,12 +217,12 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         if (!app.getUserId().equals(loginUser.getId())) {
             throw new BusinessException(ErrorCode.NO_AUTH_ERROR, "无权限访问该应用");
         }
-        // 4. 获取应用的代码生成类型
-        String codeGenTypeStr = app.getCodeGenType();
-        CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(codeGenTypeStr);
+        // 4. 生成新版本（先占位版本号，确保写入定位到新目录）
+        CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(app.getCodeGenType());
         if (codeGenTypeEnum == null) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "不支持的代码生成类型");
         }
+        appVersionService.createNewVersion(appId, codeGenTypeEnum, loginUser.getId());
         // 5. 通过校验后，添加用户消息到对话历史
         chatHistoryService.addChatMessage(appId, message, ChatHistoryMessageTypeEnum.USER.getValue(), loginUser.getId());
         // 6. 调用 AI 生成代码（流式）
@@ -223,7 +234,7 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
 
 
     @Override
-    public String deployApp(Long appId, User loginUser) {
+    public String deployApp(Long appId, Integer version, User loginUser) {
         // 1. 参数校验
         ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用 ID 不能为空");
         ThrowUtils.throwIf(loginUser == null, ErrorCode.NOT_LOGIN_ERROR, "用户未登录");
@@ -242,15 +253,16 @@ public class AppServiceImpl extends ServiceImpl<AppMapper, App> implements AppSe
         }
         // 5. 获取代码生成类型，构建源目录路径
         String codeGenType = app.getCodeGenType();
-        String sourceDirName = codeGenType + "_" + appId;
-        String sourceDirPath = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + sourceDirName;
+        CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(codeGenType);
+        ThrowUtils.throwIf(codeGenTypeEnum == null, ErrorCode.SYSTEM_ERROR, "不支持的代码生成类型");
+        int resolvedVersion = (version == null || version <= 0) ? appVersionService.getCurrentVersion(appId) : version;
+        String sourceDirPath = appVersionService.buildVersionDir(codeGenTypeEnum, appId, resolvedVersion);
         // 6. 检查源目录是否存在
         File sourceDir = new File(sourceDirPath);
         if (!sourceDir.exists() || !sourceDir.isDirectory()) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "应用代码不存在，请先生成代码");
         }
         // Vue项目特殊处理
-        CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(codeGenType);
         if(codeGenTypeEnum == CodeGenTypeEnum.VUE_PROJECT){
             // Vue 项目需要构建
             boolean buildSuccesss = vueProjectBuilder.buildProject(sourceDirPath);

@@ -2,6 +2,7 @@ package com.uloaix.xiaolu_aicode.controller;
 
 import com.uloaix.xiaolu_aicode.constant.AppConstant;
 import com.uloaix.xiaolu_aicode.model.enums.CodeGenTypeEnum;
+import com.uloaix.xiaolu_aicode.service.AppVersionService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -23,6 +24,9 @@ public class StaticResourceController {
     // 应用生成根目录（用于浏览）
     private static final String PREVIEW_ROOT_DIR = AppConstant.CODE_OUTPUT_ROOT_DIR;
 
+    @jakarta.annotation.Resource
+    private AppVersionService appVersionService;
+
     /**
      * 提供静态资源访问，支持目录重定向
      * 访问格式：http://localhost:8123/api/static/{deployKey}[/{fileName}]
@@ -32,14 +36,9 @@ public class StaticResourceController {
             @PathVariable String deployKey,
             HttpServletRequest request) {
         try {
-            boolean isPreviewKey = false;
-            for (CodeGenTypeEnum typeEnum : CodeGenTypeEnum.values()) {
-                if (deployKey.startsWith(typeEnum.getValue() + "_")) {
-                    isPreviewKey = true;
-                    break;
-                }
-            }
-            boolean isVuePreview = isPreviewKey && deployKey.startsWith(CodeGenTypeEnum.VUE_PROJECT.getValue() + "_");
+            PreviewInfo previewInfo = parsePreviewInfo(deployKey);
+            boolean isPreviewKey = previewInfo.isPreview;
+            boolean isVuePreview = isPreviewKey && previewInfo.codeGenType == CodeGenTypeEnum.VUE_PROJECT;
             // 获取资源路径
             String resourcePath = (String) request.getAttribute(HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE);
             resourcePath = resourcePath.substring(("/static/" + deployKey).length());
@@ -64,7 +63,16 @@ public class StaticResourceController {
             // 构建基础目录，Vue 项目预览需要使用 dist 目录
             String baseDirPath;
             if (isPreviewKey) {
-                baseDirPath = PREVIEW_ROOT_DIR + "/" + deployKey;
+                Integer versionParam = parseVersionParam(request.getParameter("version"));
+                Integer resolvedVersion = versionParam != null ? versionParam : previewInfo.version;
+                if (resolvedVersion == null && previewInfo.appId != null) {
+                    resolvedVersion = appVersionService.resolveActiveVersion(previewInfo.appId);
+                }
+                if (previewInfo.codeGenType != null && previewInfo.appId != null && resolvedVersion != null && resolvedVersion > 0) {
+                    baseDirPath = appVersionService.buildVersionDir(previewInfo.codeGenType, previewInfo.appId, resolvedVersion);
+                } else {
+                    baseDirPath = PREVIEW_ROOT_DIR + "/" + deployKey;
+                }
                 if (isVuePreview) {
                     baseDirPath = baseDirPath + "/dist";
                 }
@@ -86,6 +94,56 @@ public class StaticResourceController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
+    }
+
+    private Integer parseVersionParam(String versionText) {
+        try {
+            if (versionText == null) {
+                return null;
+            }
+            return Integer.parseInt(versionText);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private PreviewInfo parsePreviewInfo(String deployKey) {
+        PreviewInfo info = new PreviewInfo();
+        for (CodeGenTypeEnum typeEnum : CodeGenTypeEnum.values()) {
+            String prefix = typeEnum.getValue() + "_";
+            if (!deployKey.startsWith(prefix)) {
+                continue;
+            }
+            info.isPreview = true;
+            info.codeGenType = typeEnum;
+            String rest = deployKey.substring(prefix.length());
+            String appIdText = rest;
+            Integer version = null;
+            if (rest.contains("_v")) {
+                String[] parts = rest.split("_v", 2);
+                appIdText = parts[0];
+                if (parts.length > 1) {
+                    try {
+                        version = Integer.parseInt(parts[1]);
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+            try {
+                info.appId = Long.parseLong(appIdText);
+            } catch (Exception ignored) {
+            }
+            info.version = version;
+            return info;
+        }
+        return info;
+    }
+
+    private static class PreviewInfo {
+        private boolean isPreview;
+        private CodeGenTypeEnum codeGenType;
+        private Long appId;
+        private Integer version;
     }
 
     /**

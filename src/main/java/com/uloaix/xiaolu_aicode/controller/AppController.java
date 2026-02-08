@@ -4,7 +4,7 @@ import java.io.File;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.nio.file.Paths;
+import java.util.stream.Collectors;
 
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.MediaType;
@@ -34,12 +34,16 @@ import com.uloaix.xiaolu_aicode.model.dto.app.AppAdminUpdateRequest;
 import com.uloaix.xiaolu_aicode.model.dto.app.AppDeployRequest;
 import com.uloaix.xiaolu_aicode.model.dto.app.AppQueryRequest;
 import com.uloaix.xiaolu_aicode.model.dto.app.AppUpdateRequest;
+import com.uloaix.xiaolu_aicode.model.dto.app.AppVersionRollbackRequest;
 import com.uloaix.xiaolu_aicode.model.entity.App;
 import com.uloaix.xiaolu_aicode.model.entity.User;
 import com.uloaix.xiaolu_aicode.model.enums.BuildProgressStatusEnum;
 import com.uloaix.xiaolu_aicode.model.enums.CodeGenTypeEnum;
 import com.uloaix.xiaolu_aicode.model.vo.AppVO;
+import com.uloaix.xiaolu_aicode.model.vo.AppVersionDiffVO;
+import com.uloaix.xiaolu_aicode.model.vo.AppVersionVO;
 import com.uloaix.xiaolu_aicode.service.AppService;
+import com.uloaix.xiaolu_aicode.service.AppVersionService;
 import com.uloaix.xiaolu_aicode.service.ProjectDownloadService;
 import com.uloaix.xiaolu_aicode.service.UserService;
 
@@ -74,6 +78,9 @@ public class AppController {
 
     @Resource
     private BuildProgressService buildProgressService;
+
+    @Resource
+    private AppVersionService appVersionService;
 
 
 
@@ -154,7 +161,7 @@ public class AppController {
                     CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(app.getCodeGenType());
                     ThrowUtils.throwIf(codeGenTypeEnum == null, ErrorCode.SYSTEM_ERROR, "不支持的代码生成类型");
                     ThrowUtils.throwIf(codeGenTypeEnum != CodeGenTypeEnum.VUE_PROJECT, ErrorCode.PARAMS_ERROR, "当前应用无需构建");
-                    String projectPath = Paths.get(AppConstant.CODE_OUTPUT_ROOT_DIR, "vue_project_" + appId).toString();
+                    String projectPath = appVersionService.resolveActiveVersionDir(CodeGenTypeEnum.VUE_PROJECT, appId);
                     return buildProgressService.watch(projectPath);
                 })
                 .map(progress -> {
@@ -335,6 +342,70 @@ public class AppController {
     }
 
     /**
+     * 获取应用版本列表
+     */
+    @GetMapping("/version/list")
+    public BaseResponse<List<AppVersionVO>> listAppVersions(@RequestParam Long appId, HttpServletRequest request) {
+        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用ID无效");
+        User loginUser = userService.getLoginUser(request);
+        App app = appService.getById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
+        boolean noAuth = !app.getUserId().equals(loginUser.getId())
+                && !UserConstant.ADMIN_ROLE.equals(loginUser.getUserRole());
+        ThrowUtils.throwIf(noAuth, ErrorCode.NO_AUTH_ERROR, "无权限查看版本");
+        List<AppVersionVO> versionVOList = appVersionService.listVersions(appId).stream()
+                .map(version -> {
+                    AppVersionVO vo = new AppVersionVO();
+                    BeanUtil.copyProperties(version, vo);
+                    return vo;
+                }).collect(Collectors.toList());
+        return ResultUtils.success(versionVOList);
+    }
+
+    /**
+     * 回滚到指定版本
+     */
+    @PostMapping("/version/rollback")
+    public BaseResponse<Boolean> rollbackVersion(@RequestBody AppVersionRollbackRequest request,
+                                                 HttpServletRequest httpServletRequest) {
+        ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
+        Long appId = request.getAppId();
+        Integer version = request.getVersion();
+        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用ID无效");
+        ThrowUtils.throwIf(version == null || version <= 0, ErrorCode.PARAMS_ERROR, "版本号无效");
+        User loginUser = userService.getLoginUser(httpServletRequest);
+        App app = appService.getById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
+        boolean noAuth = !app.getUserId().equals(loginUser.getId())
+                && !UserConstant.ADMIN_ROLE.equals(loginUser.getUserRole());
+        ThrowUtils.throwIf(noAuth, ErrorCode.NO_AUTH_ERROR, "无权限回滚版本");
+        boolean result = appVersionService.rollbackToVersion(appId, version);
+        return ResultUtils.success(result);
+    }
+
+    /**
+     * 版本对比（支持生成截图）
+     */
+    @GetMapping("/version/diff")
+    public BaseResponse<AppVersionDiffVO> diffVersions(@RequestParam Long appId,
+                                                       @RequestParam Integer fromVersion,
+                                                       @RequestParam Integer toVersion,
+                                                       @RequestParam(required = false, defaultValue = "false") boolean withScreenshot,
+                                                       HttpServletRequest request) {
+        ThrowUtils.throwIf(appId == null || appId <= 0, ErrorCode.PARAMS_ERROR, "应用ID无效");
+        ThrowUtils.throwIf(fromVersion == null || fromVersion <= 0, ErrorCode.PARAMS_ERROR, "fromVersion无效");
+        ThrowUtils.throwIf(toVersion == null || toVersion <= 0, ErrorCode.PARAMS_ERROR, "toVersion无效");
+        User loginUser = userService.getLoginUser(request);
+        App app = appService.getById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR, "应用不存在");
+        boolean noAuth = !app.getUserId().equals(loginUser.getId())
+                && !UserConstant.ADMIN_ROLE.equals(loginUser.getUserRole());
+        ThrowUtils.throwIf(noAuth, ErrorCode.NO_AUTH_ERROR, "无权限查看版本对比");
+        AppVersionDiffVO diffVO = appVersionService.diffVersions(appId, fromVersion, toVersion, withScreenshot);
+        return ResultUtils.success(diffVO);
+    }
+
+    /**
      * 管理员删除应用
      *
      * @param deleteRequest 删除请求
@@ -433,7 +504,7 @@ public class AppController {
         // 获取当前登录用户
         User loginUser = userService.getLoginUser(request);
         // 调用服务部署应用
-        String deployUrl = appService.deployApp(appId, loginUser);
+        String deployUrl = appService.deployApp(appId, appDeployRequest.getVersion(), loginUser);
         return ResultUtils.success(deployUrl);
     }
 
@@ -446,6 +517,7 @@ public class AppController {
      */
     @GetMapping("/download/{appId}")
     public void downloadAppCode(@PathVariable Long appId,
+                                @RequestParam(required = false) Integer version,
                                 HttpServletRequest request,
                                 HttpServletResponse response) {
         // 1. 基础校验
@@ -460,8 +532,10 @@ public class AppController {
         }
         // 4. 构建应用代码目录路径（生成目录，非部署目录）
         String codeGenType = app.getCodeGenType();
-        String sourceDirName = codeGenType + "_" + appId;
-        String sourceDirPath = AppConstant.CODE_OUTPUT_ROOT_DIR + File.separator + sourceDirName;
+        CodeGenTypeEnum codeGenTypeEnum = CodeGenTypeEnum.getEnumByValue(codeGenType);
+        ThrowUtils.throwIf(codeGenTypeEnum == null, ErrorCode.SYSTEM_ERROR, "不支持的代码生成类型");
+        int resolvedVersion = (version == null || version <= 0) ? appVersionService.getCurrentVersion(appId) : version;
+        String sourceDirPath = appVersionService.buildVersionDir(codeGenTypeEnum, appId, resolvedVersion);
         // 5. 检查代码目录是否存在
         File sourceDir = new File(sourceDirPath);
         ThrowUtils.throwIf(!sourceDir.exists() || !sourceDir.isDirectory(),

@@ -16,6 +16,7 @@ import com.uloaix.xiaolu_aicode.core.saver.CodeFileSaverExecutor;
 import com.uloaix.xiaolu_aicode.exception.BusinessException;
 import com.uloaix.xiaolu_aicode.exception.ErrorCode;
 import com.uloaix.xiaolu_aicode.model.enums.CodeGenTypeEnum;
+import com.uloaix.xiaolu_aicode.service.AppVersionService;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.PartialToolCall;
@@ -41,6 +42,9 @@ public class AiCodeGeneratorFacade {
     @Resource
     private AiCodeGeneratorServiceFactory aiCodeGeneratorServiceFactory;
 
+    @Resource
+    private AppVersionService appVersionService;
+
     /**
      * 统一入口：根据类型生成并保存代码
      *
@@ -58,11 +62,17 @@ public class AiCodeGeneratorFacade {
         return switch (codeGenTypeEnum) {
             case HTML -> {
                 HtmlCodeResult result = aiCodeGeneratorService.generateHtmlCode(userMessage);
-                yield CodeFileSaverExecutor.executeSaver(result, CodeGenTypeEnum.HTML, appId);
+                File savedDir = CodeFileSaverExecutor.executeSaver(result, CodeGenTypeEnum.HTML, appId);
+                int version = appVersionService.resolveActiveVersion(appId);
+                appVersionService.markVersionReady(appId, version);
+                yield savedDir;
             }
             case MULTI_FILE -> {
                 MultiFileCodeResult result = aiCodeGeneratorService.generateMultiFileCode(userMessage);
-                yield CodeFileSaverExecutor.executeSaver(result, CodeGenTypeEnum.MULTI_FILE, appId);
+                File savedDir = CodeFileSaverExecutor.executeSaver(result, CodeGenTypeEnum.MULTI_FILE, appId);
+                int version = appVersionService.resolveActiveVersion(appId);
+                appVersionService.markVersionReady(appId, version);
+                yield savedDir;
             }
             default -> {
                 String errorMessage = "不支持的生成类型：" + codeGenTypeEnum.getValue();
@@ -195,6 +205,9 @@ public class AiCodeGeneratorFacade {
         return codeStream.doOnNext(chunk -> {
             // 实时收集代码片段
             codeBuilder.append(chunk);
+        }).doOnError(error -> {
+            int version = appVersionService.resolveActiveVersion(appId);
+            appVersionService.markVersionFailed(appId, version, error.getMessage());
         }).doOnComplete(() -> {
             // 流式返回完成后保存代码
             try {
@@ -204,8 +217,12 @@ public class AiCodeGeneratorFacade {
                 // 使用执行器保存代码
                 File savedDir = CodeFileSaverExecutor.executeSaver(parsedResult, codeGenType, appId);
                 log.info("保存成功，路径为：" + savedDir.getAbsolutePath());
+                int version = appVersionService.resolveActiveVersion(appId);
+                appVersionService.markVersionReady(appId, version);
             } catch (Exception e) {
                 log.error("保存失败: {}", e.getMessage());
+                int version = appVersionService.resolveActiveVersion(appId);
+                appVersionService.markVersionFailed(appId, version, e.getMessage());
             }
         });
     }

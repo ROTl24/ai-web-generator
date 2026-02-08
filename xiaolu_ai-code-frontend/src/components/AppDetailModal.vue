@@ -18,6 +18,13 @@
           </a-tag>
           <span v-else>未知类型</span>
         </div>
+        <div class="info-item">
+          <span class="info-label">生成状态：</span>
+          <a-tag v-if="app?.genStatus" :color="getAppGenStatusMeta(app.genStatus).color">
+            {{ getAppGenStatusMeta(app.genStatus).label }}
+          </a-tag>
+          <span v-else>未生成</span>
+        </div>
 
       </div>
 
@@ -46,6 +53,7 @@
 
 <script setup lang="ts">
 import { formatCodeGenType } from '@/utils/codeGenTypes'
+import { getAppGenStatusMeta } from '@/utils/appGenStatus'
 import { formatTime } from '@/utils/time'
 import { DeleteOutlined, EditOutlined } from '@ant-design/icons-vue'
 import { computed } from 'vue'
