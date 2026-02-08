@@ -6,13 +6,14 @@
 
 AI Web Generator 是一个全栈 Web 应用，用户只需通过自然语言描述需求，AI 即可自动生成对应的 Web 应用代码。系统集成了 LangChain4j 和 LangGraph4j，支持多种代码生成模式，并提供流式响应（SSE）、版本管理、一键部署等能力。
 
-![b27a394ab1fc9034c25710605747e227](E:\WeChat\xwechat_files\wxid_4sl5dw1kwwv212_f364\temp\RWTemp\2026-02\9e20f478899dc29eb19741386f9343c8\b27a394ab1fc9034c25710605747e227.png)
+<img width="2538" height="1255" alt="e0f437637506c87bb1697f2c98bcb434" src="https://github.com/user-attachments/assets/4f5d7aa8-6207-4840-bd86-cf48ec8c50a7" />
 
+<img width="2535" height="1180" alt="276dd18690170b20f548a964e4952ce3" src="https://github.com/user-attachments/assets/a5b3edd5-56a4-4904-aaa9-f0465d28e636" />
 
+<img width="2345" height="1296" alt="d2cee411f15b48280552c0a5d5dfee78" src="https://github.com/user-attachments/assets/68972869-fe52-49a5-874b-42bec6af2049" />
 
-![d2cee411f15b48280552c0a5d5dfee78](E:\WeChat\xwechat_files\wxid_4sl5dw1kwwv212_f364\temp\RWTemp\2026-02\9e20f478899dc29eb19741386f9343c8\d2cee411f15b48280552c0a5d5dfee78.png)
+<img width="2345" height="1300" alt="26b9150b9785101b3bb91f99a8ebccf3" src="https://github.com/user-attachments/assets/159c3e6e-a2e4-4f4e-a766-4667a5da2cc0" />
 
-![26b9150b9785101b3bb91f99a8ebccf3](E:\WeChat\xwechat_files\wxid_4sl5dw1kwwv212_f364\temp\RWTemp\2026-02\9e20f478899dc29eb19741386f9343c8\26b9150b9785101b3bb91f99a8ebccf3.png)
 
 ### 核心特性
 
