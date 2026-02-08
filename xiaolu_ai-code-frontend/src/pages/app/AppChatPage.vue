@@ -54,13 +54,66 @@
                 <a-avatar :src="aiAvatar" />
               </div>
               <div class="message-content">
-                <MarkdownRenderer v-if="message.content" :content="message.content" />
-                <div v-if="message.codeFiles && message.codeFiles.length" class="message-code-files">
-                  <div v-for="file in message.codeFiles" :key="file.path" class="message-code-file">
-                    <div class="message-code-path">{{ file.path }}</div>
-                    <MarkdownRenderer :content="buildCodeBlock(file)" />
-                  </div>
-                </div>
+                <!-- 按 segments 顺序渲染，工具调用和文字保持原始顺序 -->
+                <template v-if="message.segments && message.segments.length">
+                  <template v-for="(segment, sIdx) in message.segments" :key="sIdx">
+                    <!-- 文本段 -->
+                    <div v-if="segment.type === 'text'" class="segment-text">
+                      <MarkdownRenderer :content="segment.content!" />
+                    </div>
+
+                    <!-- 选择工具指示器 -->
+                    <div v-else-if="segment.type === 'tool-request'" class="tool-request-badge">
+                      <span class="tool-request-dot"></span>
+                      <span>正在调用 {{ segment.toolName }}</span>
+                    </div>
+
+                    <!-- 写入文件工具调用卡片 -->
+                    <div v-else-if="segment.type === 'tool-write'" class="tool-call-card">
+                      <div class="tool-call-header" @click="toggleSegmentCollapse(index, sIdx)">
+                        <div class="tool-call-header-left">
+                          <span class="tool-call-icon">📝</span>
+                          <span class="tool-call-action">写入文件</span>
+                          <code class="tool-call-filepath">{{ segment.filePath }}</code>
+                        </div>
+                        <span class="tool-call-toggle">
+                          {{ isSegmentCollapsed(index, sIdx) ? '▶' : '▼' }}
+                        </span>
+                      </div>
+                      <div v-show="!isSegmentCollapsed(index, sIdx)" class="tool-call-body">
+                        <MarkdownRenderer :content="buildSegmentCodeBlock(segment)" />
+                      </div>
+                    </div>
+
+                    <!-- 修改文件工具调用卡片 -->
+                    <div v-else-if="segment.type === 'tool-modify'" class="tool-call-card">
+                      <div class="tool-call-header" @click="toggleSegmentCollapse(index, sIdx)">
+                        <div class="tool-call-header-left">
+                          <span class="tool-call-icon">✏️</span>
+                          <span class="tool-call-action">修改文件</span>
+                          <code class="tool-call-filepath">{{ segment.filePath }}</code>
+                        </div>
+                        <span class="tool-call-toggle">
+                          {{ isSegmentCollapsed(index, sIdx) ? '▶' : '▼' }}
+                        </span>
+                      </div>
+                      <div v-show="!isSegmentCollapsed(index, sIdx)" class="tool-call-body">
+                        <MarkdownRenderer :content="buildSegmentCodeBlock(segment)" />
+                      </div>
+                    </div>
+
+                    <!-- 简单工具调用标记 (读取文件/删除文件/读取目录) -->
+                    <div v-else-if="segment.type === 'tool-simple'" class="tool-simple-badge">
+                      <span class="tool-simple-icon">⚒️</span>
+                      <span class="tool-simple-action">{{ segment.toolName }}</span>
+                      <code class="tool-simple-path">{{ segment.filePath }}</code>
+                    </div>
+                  </template>
+                </template>
+
+                <!-- 无 segments 时的 fallback -->
+                <MarkdownRenderer v-else-if="message.content" :content="message.content" />
+
                 <div v-if="message.loading" class="loading-indicator">
                   <a-spin size="small" />
                   <span>AI 正在思考...</span>
@@ -210,18 +263,23 @@ const appInfo = ref<API.AppVO>()
 const appId = ref<any>()
 
 // 对话相关
+interface ContentSegment {
+  type: 'text' | 'tool-write' | 'tool-modify' | 'tool-simple' | 'tool-request'
+  content?: string
+  filePath?: string
+  language?: string
+  code?: string
+  oldCode?: string
+  newCode?: string
+  toolName?: string
+}
+
 interface Message {
   type: 'user' | 'ai'
   content: string
   loading?: boolean
   createTime?: string
-  codeFiles?: CodeFile[]
-}
-
-interface CodeFile {
-  path: string
-  language: string
-  content: string
+  segments?: ContentSegment[]
 }
 
 interface BuildProgressEvent {
@@ -300,46 +358,162 @@ const getLanguageByPath = (filePath: string) => {
   return match ? match[1] : ''
 }
 
-const buildCodeBlock = (file: CodeFile) => {
-  const language = file.language || getLanguageByPath(file.path)
-  const content = file.content ?? ''
-  return `\`\`\`${language}\n${content}\n\`\`\``
+// 折叠状态管理
+const collapsedSegments = ref(new Set<string>())
+
+const toggleSegmentCollapse = (messageIdx: number, segmentIdx: number) => {
+  const key = `${messageIdx}-${segmentIdx}`
+  const newSet = new Set(collapsedSegments.value)
+  if (newSet.has(key)) {
+    newSet.delete(key)
+  } else {
+    newSet.add(key)
+  }
+  collapsedSegments.value = newSet
 }
 
-const extractCodeFilesFromContent = (content: string) => {
-  const files: CodeFile[] = []
-  const fileIndexMap = new Map<string, number>()
-  const regex = /\[⚒️工具调用\]\s*写入文件\s+([^\n]+)\n\s*```([^\n]*)\n([\s\S]*?)\n\s*```/g
-  let match: RegExpExecArray | null = null
-  regex.lastIndex = 0
-  while ((match = regex.exec(content)) !== null) {
-    const filePath = match[1]?.trim() || ''
-    const language = (match[2] || '').trim() || getLanguageByPath(filePath)
-    const fileContent = match[3] ?? ''
-    if (!filePath) {
-      continue
-    }
-    const fileInfo: CodeFile = {
-      path: filePath,
-      language,
-      content: fileContent,
-    }
-    if (fileIndexMap.has(filePath)) {
-      files[fileIndexMap.get(filePath)!] = fileInfo
-    } else {
-      fileIndexMap.set(filePath, files.length)
-      files.push(fileInfo)
+const isSegmentCollapsed = (messageIdx: number, segmentIdx: number) => {
+  return collapsedSegments.value.has(`${messageIdx}-${segmentIdx}`)
+}
+
+// 将工具调用段构建为 Markdown 代码块用于渲染
+const buildSegmentCodeBlock = (segment: ContentSegment): string => {
+  if (segment.type === 'tool-write') {
+    const language = segment.language || ''
+    const content = segment.code ?? ''
+    return `\`\`\`${language}\n${content}\n\`\`\``
+  }
+  if (segment.type === 'tool-modify') {
+    const oldCode = segment.oldCode ?? ''
+    const newCode = segment.newCode ?? ''
+    return `**替换前：**\n\`\`\`\n${oldCode}\n\`\`\`\n\n**替换后：**\n\`\`\`\n${newCode}\n\`\`\``
+  }
+  return ''
+}
+
+/**
+ * 将原始 AI 输出内容解析为有序的内容段数组，
+ * 保持文本和工具调用的原始出现顺序。
+ */
+const parseContentIntoSegments = (rawContent: string): ContentSegment[] => {
+  const segments: ContentSegment[] = []
+
+  interface ToolMatch {
+    startIndex: number
+    endIndex: number
+    segment: ContentSegment
+  }
+
+  const toolMatches: ToolMatch[] = []
+
+  let match: RegExpExecArray | null
+
+  // 1. 匹配写入文件工具调用: [⚒️工具调用] 写入文件 path\n```lang\ncontent\n```
+  const writeFileRegex = /\[⚒️工具调用\]\s*写入文件\s+([^\n]+)\n\s*```([^\n]*)\n([\s\S]*?)\n\s*```/g
+  while ((match = writeFileRegex.exec(rawContent)) !== null) {
+    toolMatches.push({
+      startIndex: match.index,
+      endIndex: match.index + match[0].length,
+      segment: {
+        type: 'tool-write',
+        toolName: '写入文件',
+        filePath: match[1].trim(),
+        language: (match[2] || '').trim() || getLanguageByPath(match[1].trim()),
+        code: match[3] ?? '',
+      },
+    })
+  }
+
+  // 2. 匹配修改文件工具调用
+  const modifyFileRegex =
+    /\[⚒️工具调用\]\s*修改文件\s+([^\n]+)\s*\n\s*\n?\s*替换前[：:]\s*\n\s*```[^\n]*\n([\s\S]*?)\n\s*```\s*\n\s*\n?\s*替换后[：:]\s*\n\s*```[^\n]*\n([\s\S]*?)\n\s*```/g
+  while ((match = modifyFileRegex.exec(rawContent)) !== null) {
+    toolMatches.push({
+      startIndex: match.index,
+      endIndex: match.index + match[0].length,
+      segment: {
+        type: 'tool-modify',
+        toolName: '修改文件',
+        filePath: match[1].trim(),
+        oldCode: match[2] ?? '',
+        newCode: match[3] ?? '',
+      },
+    })
+  }
+
+  // 3. 匹配简单工具调用 (读取文件、删除文件、读取目录)
+  const simpleToolRegex = /\[⚒️工具调用\]\s*(读取文件|删除文件|读取目录)\s+([^\n]*)/g
+  while ((match = simpleToolRegex.exec(rawContent)) !== null) {
+    const overlaps = toolMatches.some(
+      (tm) => match!.index >= tm.startIndex && match!.index < tm.endIndex,
+    )
+    if (!overlaps) {
+      toolMatches.push({
+        startIndex: match.index,
+        endIndex: match.index + match[0].length,
+        segment: {
+          type: 'tool-simple',
+          toolName: match[1].trim(),
+          filePath: match[2].trim(),
+        },
+      })
     }
   }
-  let cleanedContent = content.replace(regex, '').trim()
-  const pendingIndex = cleanedContent.lastIndexOf('[⚒️工具调用] 写入文件')
-  if (pendingIndex !== -1) {
-    cleanedContent = cleanedContent.slice(0, pendingIndex).trimEnd()
+
+  // 4. 匹配选择工具标记: [选择工具] toolName
+  const toolRequestRegex = /\[选择工具\]\s*([^\n]+)/g
+  while ((match = toolRequestRegex.exec(rawContent)) !== null) {
+    const overlaps = toolMatches.some(
+      (tm) => match!.index >= tm.startIndex && match!.index < tm.endIndex,
+    )
+    if (!overlaps) {
+      toolMatches.push({
+        startIndex: match.index,
+        endIndex: match.index + match[0].length,
+        segment: {
+          type: 'tool-request',
+          toolName: match[1].trim(),
+        },
+      })
+    }
   }
-  return {
-    cleanedContent,
-    files,
+
+  // 按位置排序
+  toolMatches.sort((a, b) => a.startIndex - b.startIndex)
+
+  // 按原始顺序构建 segments
+  let currentIndex = 0
+  for (const tm of toolMatches) {
+    if (tm.startIndex > currentIndex) {
+      const textContent = rawContent.slice(currentIndex, tm.startIndex).trim()
+      if (textContent) {
+        segments.push({ type: 'text', content: textContent })
+      }
+    }
+    segments.push(tm.segment)
+    currentIndex = tm.endIndex
   }
+
+  // 处理末尾剩余内容
+  if (currentIndex < rawContent.length) {
+    const remainingText = rawContent.slice(currentIndex).trim()
+    // 检查是否有未完成的工具调用（流式传输中可能出现）
+    const pendingWriteIdx = remainingText.lastIndexOf('[⚒️工具调用] 写入文件')
+    const pendingModifyIdx = remainingText.lastIndexOf('[⚒️工具调用] 修改文件')
+    const pendingIdx = Math.max(pendingWriteIdx, pendingModifyIdx)
+
+    if (pendingIdx !== -1) {
+      const textBefore = remainingText.slice(0, pendingIdx).trim()
+      if (textBefore) {
+        segments.push({ type: 'text', content: textBefore })
+      }
+      // 未完成的工具调用不添加到 segments，等下一次解析
+    } else if (remainingText) {
+      segments.push({ type: 'text', content: remainingText })
+    }
+  }
+
+  return segments
 }
 
 
@@ -365,20 +539,16 @@ const loadChatHistory = async (isLoadMore = false) => {
         const historyMessages: Message[] = chatHistories
           .map((chat) => {
             const type = (chat.messageType === 'user' ? 'user' : 'ai') as 'user' | 'ai'
-            let content = chat.message || ''
-            let codeFiles: CodeFile[] | undefined = undefined
+            const content = chat.message || ''
+            let segments: ContentSegment[] | undefined = undefined
             if (type === 'ai') {
-              const extracted = extractCodeFilesFromContent(content)
-              content = extracted.cleanedContent
-              if (extracted.files.length) {
-                codeFiles = extracted.files
-              }
+              segments = parseContentIntoSegments(content)
             }
             return {
               type,
               content,
               createTime: chat.createTime,
-              codeFiles,
+              segments,
             }
           })
           .reverse() // 反转数组，让老消息在前
@@ -468,7 +638,7 @@ const sendInitialMessage = async (prompt: string) => {
     type: 'ai',
     content: '',
     loading: true,
-    codeFiles: [],
+    segments: [],
   })
 
   await nextTick()
@@ -519,7 +689,7 @@ const sendMessage = async () => {
     type: 'ai',
     content: '',
     loading: true,
-    codeFiles: [],
+    segments: [],
   })
 
   await nextTick()
@@ -658,14 +828,12 @@ const generateCode = async (userMessage: string, aiMessageIndex: number) => {
         const parsed = JSON.parse(event.data)
         const content = parsed.d
 
-        // 拼接内容
+        // 拼接内容并按段解析
         if (content !== undefined && content !== null) {
           rawContent += content
-          const extracted = extractCodeFilesFromContent(rawContent)
-          messages.value[aiMessageIndex].content = extracted.cleanedContent
-          if (extracted.files.length) {
-            messages.value[aiMessageIndex].codeFiles = extracted.files
-          }
+          const segments = parseContentIntoSegments(rawContent)
+          messages.value[aiMessageIndex].content = rawContent
+          messages.value[aiMessageIndex].segments = segments
           messages.value[aiMessageIndex].loading = false
           scrollToBottom()
         }
@@ -706,10 +874,12 @@ const generateCode = async (userMessage: string, aiMessageIndex: number) => {
       isGenerating.value = false
       eventSource?.close()
 
-      const extracted = extractCodeFilesFromContent(rawContent)
+      // 最终解析：去除流式中的 [选择工具] 标记（历史记录不包含这些标记）
+      const finalContent = rawContent.replace(/\[选择工具\]\s*[^\n]+\n*/g, '')
+      const segments = parseContentIntoSegments(finalContent)
       if (messages.value[aiMessageIndex]) {
-        messages.value[aiMessageIndex].content = extracted.cleanedContent
-        messages.value[aiMessageIndex].codeFiles = extracted.files
+        messages.value[aiMessageIndex].content = finalContent
+        messages.value[aiMessageIndex].segments = segments
         messages.value[aiMessageIndex].loading = false
       }
 
@@ -1047,33 +1217,151 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.message-code-files {
-  margin-top: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+/* 文本段 */
+.segment-text {
+  margin: 0;
 }
 
-.message-code-file {
-  border: 1px solid #f0f0f0;
-  border-radius: 6px;
-  padding: 8px 12px;
-  background: #fafafa;
-}
-
-.message-code-path {
+/* 选择工具指示器 */
+.tool-request-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+  margin: 8px 0;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 16px;
   font-size: 12px;
-  color: #666;
-  margin-bottom: 6px;
+  color: #3b82f6;
+}
+
+.tool-request-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3b82f6;
+  animation: toolDotPulse 1.5s infinite;
+}
+
+@keyframes toolDotPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* 工具调用卡片 */
+.tool-call-card {
+  margin: 10px 0;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.tool-call-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: linear-gradient(to right, #f8f9fa, #f0f2f5);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+}
+
+.tool-call-header:hover {
+  background: linear-gradient(to right, #eef0f3, #e6e9ed);
+}
+
+.tool-call-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.tool-call-icon {
+  flex-shrink: 0;
+  font-size: 14px;
+}
+
+.tool-call-action {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  white-space: nowrap;
+}
+
+.tool-call-filepath {
+  font-size: 12px;
+  color: #6b7280;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  background: rgba(0, 0, 0, 0.04);
+  padding: 2px 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-call-toggle {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: #9ca3af;
+  margin-left: 8px;
+}
+
+.tool-call-body {
+  border-top: 1px solid #e5e7eb;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.tool-call-body :deep(.markdown-content) {
+  margin: 0;
+}
+
+.tool-call-body :deep(pre) {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}
+
+.tool-call-body :deep(pre.hljs) {
+  border-radius: 0;
+}
+
+/* 简单工具调用标记 */
+.tool-simple-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  margin: 8px 0;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.tool-simple-icon {
+  font-size: 12px;
+}
+
+.tool-simple-action {
+  font-weight: 500;
+  color: #374151;
+}
+
+.tool-simple-path {
   font-family: 'Monaco', 'Menlo', monospace;
-}
-
-.message-code-file :deep(.markdown-content) {
-  margin: 0;
-}
-
-.message-code-file :deep(pre) {
-  margin: 0;
+  font-size: 11px;
+  color: #6b7280;
+  background: rgba(0, 0, 0, 0.03);
+  padding: 1px 6px;
+  border-radius: 3px;
 }
 
 .loading-indicator {
